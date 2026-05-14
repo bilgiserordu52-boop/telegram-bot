@@ -14,7 +14,6 @@ from telegram.ext import (
 # ================== CONFIG ==================
 TOKEN = os.getenv("TOKEN")
 
-# ================== LOGGING ==================
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -45,11 +44,10 @@ def save_admins(admins):
     with open("admins.json", "w") as f:
         json.dump(list(admins), f)
 
-# ================== DATA ==================
 users = load_users()
 admins = load_admins()
 
-# ================== ADMIN CHECK ==================
+# ================== ADMIN ==================
 def is_admin(uid):
     return uid in admins
 
@@ -64,7 +62,6 @@ def admin_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 Stats", callback_data="stats")],
         [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
-        [InlineKeyboardButton("👮 Admin Panel", callback_data="admin")],
         [InlineKeyboardButton("➕ Admin Ekle", callback_data="add_admin")],
         [InlineKeyboardButton("➖ Admin Sil", callback_data="remove_admin")],
         [InlineKeyboardButton("🔙 Geri", callback_data="back")]
@@ -89,52 +86,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== HELP ==================
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Komutlar:\n"
+        "🤖 BOT YARDIM\n\n"
         "/start - Menü\n"
         "/help - Yardım\n\n"
         "📌 Özellikler:\n"
-        "- Selam yaz\n"
-        "- Stats gör\n"
-        "- Admin panel (varsa)"
+        "- selam yaz\n"
+        "- nasılsın yaz\n"
+        "- admin panel (varsa)\n"
+        "- stats"
     )
 
-# ================== MESSAGES ==================
-async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    text = update.message.text.lower()
-
-    users.add(uid)
-    save_users(users)
-
-    # BROADCAST MODE
-    if context.user_data.get("broadcast") and is_admin(uid):
-        for user in users:
-            try:
-                await context.bot.send_message(user, f"📢 Duyuru:\n\n{text}")
-            except:
-                pass
-        context.user_data["broadcast"] = False
-        return
-
-    if text == "selam":
-        await update.message.reply_text("Selam 👋")
-
-    elif text in ["nasılsın", "naber"]:
-        await update.message.reply_text("İyiyim 👍 sen nasılsın?")
-
-    elif text in ["ne yapabilirsin", "ne işe yararsın"]:
-        await update.message.reply_text(
-            "🤖 Ben bir botum:\n"
-            "- Menü sistemi\n"
-            "- Admin panel\n"
-            "- Stats\n"
-            "- Broadcast"
-        )
-
-    elif text in ["bot", "kimsin"]:
-        await update.message.reply_text("Ben senin Telegram botunum 😎")
-
-# ================== BUTTONS ==================
+# ================== CALLBACK ==================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -159,12 +121,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=back_menu()
         )
 
-    elif query.data == "admin":
-        if is_admin(uid):
-            await query.edit_message_text("👮 Admin Panel", reply_markup=admin_menu())
-        else:
-            await query.edit_message_text("❌ Yetki yok", reply_markup=back_menu())
-
     elif query.data == "broadcast":
         context.user_data["broadcast"] = True
         await query.edit_message_text("📢 Mesaj yaz:", reply_markup=back_menu())
@@ -177,5 +133,78 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["remove_admin"] = True
         await query.edit_message_text("➖ Admin ID yaz:", reply_markup=back_menu())
 
-# ================== ADMIN TEXT ACTIONS ==================
-async def admin_actions
+# ================== MESSAGES (TEK HANDLER) ==================
+async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    text = update.message.text.lower()
+
+    users.add(uid)
+    save_users(users)
+
+    # ===== ADMIN ACTIONS =====
+    if context.user_data.get("add_admin") and is_admin(uid):
+        try:
+            new_admin = int(text)
+            admins.add(new_admin)
+            save_admins(admins)
+            await update.message.reply_text("✅ Admin eklendi")
+        except:
+            await update.message.reply_text("❌ Hatalı ID")
+        context.user_data["add_admin"] = False
+        return
+
+    if context.user_data.get("remove_admin") and is_admin(uid):
+        try:
+            rem_admin = int(text)
+            admins.discard(rem_admin)
+            save_admins(admins)
+            await update.message.reply_text("🗑 Admin silindi")
+        except:
+            await update.message.reply_text("❌ Hatalı ID")
+        context.user_data["remove_admin"] = False
+        return
+
+    # ===== BROADCAST =====
+    if context.user_data.get("broadcast") and is_admin(uid):
+        for user in users:
+            try:
+                await context.bot.send_message(user, f"📢 Duyuru:\n\n{text}")
+            except:
+                pass
+        context.user_data["broadcast"] = False
+        return
+
+    # ===== NORMAL RESPONSES =====
+    if text == "selam":
+        await update.message.reply_text("Selam 👋")
+
+    elif text in ["nasılsın", "naber"]:
+        await update.message.reply_text("İyiyim 👍 sen nasılsın?")
+
+    elif text in ["ne yapabilirsin", "ne işe yararsın"]:
+        await update.message.reply_text(
+            "🤖 Ben bir botum:\n"
+            "- Menü\n"
+            "- Admin panel\n"
+            "- Stats\n"
+            "- Broadcast"
+        )
+
+    elif text in ["bot", "kimsin"]:
+        await update.message.reply_text("Ben senin Telegram botunum 😎")
+
+# ================== MAIN ==================
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messages))
+
+    print("🚀 BOT RUNNING")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
