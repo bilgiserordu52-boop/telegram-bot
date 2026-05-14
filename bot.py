@@ -1,7 +1,6 @@
-print("TOKEN", TOKEN)
-print("BOT STARTING")
-
 import os
+TOKEN = os.getenv("TOKEN")
+print("TOKEN", TOKEN)
 import json
 import base64
 import logging
