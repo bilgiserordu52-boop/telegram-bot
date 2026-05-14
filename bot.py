@@ -1,5 +1,6 @@
 import time
 import logging
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,9 +14,8 @@ from telegram.ext import (
 TOKEN = "8945412773:AAFRsFVmYqqcgzSwidMVo-VN3uK59ELEiEE"
 ADMIN_ID = 8607713044
 
-admin_sessions = {}
-SESSION_TIMEOUT = 100
-users = set()
+users = load_users()
+admins = load_admins()
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -25,12 +25,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_users():
+    try:
+        with open("users.json", "r") as f:
+            return set(json.load(f))
+        except:
+            return set()
+
+def save_users(users):
+    with open("users.json", "w") as f:
+        json.dump(list(users), f)
+
+def load_admins():
+    try:
+        with open("admins.json", "r") as f:
+            return set(json.load(f))
+    except:
+        return {8607713044}
+
 def is_admin(uid):
-    return uid in admin_sessions and (time.time() - admin_sessions[uid]) < SESSION_TIMEOUT
-
-
-def touch(uid):
-    admin_sessions[uid] = time.time()
+    return uid in admins_sessions and (time.time() - admin_sessions[uid]) < SESSION_TIMEOUT
 
 
 def count_users():
@@ -86,6 +100,7 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
 
     users.add(uid)
+    save_users(users)
     logger.info(f"{uid}: {text}")
 
     if text == "selam":
@@ -118,7 +133,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "admin":
         if is_admin(uid):
-            touch(uid)
             await query.edit_message_text("👮 Admin Panel", reply_markup=admin_menu())
         else:
             await query.edit_message_text("❌ Yetki yok", reply_markup=back_menu())
