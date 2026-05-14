@@ -1,5 +1,4 @@
 import os
-import json
 import base64
 import logging
 import requests
@@ -13,32 +12,28 @@ from telegram.ext import (
     filters
 )
 
+# ================= ENV =================
 TOKEN = os.getenv("TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
+
+# ================= DEBUG =================
 print("TOKEN:", TOKEN)
 print("BOT STARTING")
 
-# ================= CONFIG =================
-TOKEN = os.getenv("TOKEN")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
-
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
-
-# ================= LOG =================
+# ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
 
 # ================= MEMORY =================
 users = set()
 admins = set()
-
 deploy_mode = False
 
-# ================= ADMIN CHECK =================
-def is_admin(uid):
+# ================= ADMIN =================
+def is_admin(uid: int):
     return uid in admins or uid == ADMIN_ID
 
 # ================= COMMANDS =================
@@ -48,33 +43,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "/start - başlat\n"
-        "/help - yardım\n"
-        "/login 1234 - admin giriş\n"
-        "/deploy - kod gönder"
+        "/start - Başlat\n"
+        "/help - Yardım\n"
+        "/login 1234 - Admin giriş\n"
+        "/deploy - Kod yükleme"
     )
 
-# ================= LOGIN (FIXED) =================
+# ================= LOGIN =================
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-
     parts = update.message.text.split()
 
     if len(parts) < 2:
         await update.message.reply_text("Kullanım: /login 1234")
         return
 
-    password = parts[1]
-
-    if password == ADMIN_PASSWORD:
+    if parts[1] == ADMIN_PASSWORD:
         admins.add(uid)
         await update.message.reply_text("✅ Admin giriş başarılı")
     else:
         await update.message.reply_text("❌ Hatalı şifre")
 
-# ================= DEPLOY =================
+# ================= DEPLOY MODE =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global deploy_mode
+
     uid = update.effective_user.id
 
     if not is_admin(uid):
@@ -91,7 +84,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
-    # ========== DEPLOY MODE ==========
+    # ===== DEPLOY MODE =====
     if deploy_mode and is_admin(uid):
 
         if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -109,14 +102,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         data = {
-            "message": "telegram deploy update",
+            "message": "telegram bot update",
             "content": encoded
         }
 
         r = requests.put(url, json=data, headers=headers)
 
         deploy_mode = False
-await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
+        await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
         return
 
     # ===== NORMAL CHAT =====
@@ -128,13 +121,11 @@ await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
     elif t in ["nasılsın", "naber"]:
         await update.message.reply_text("İyiyim 👍")
 
-    elif t in ["kimsin", "bot"]:
+    elif t in ["bot", "kimsin"]:
         await update.message.reply_text("Ben senin botunum 🤖")
-
 
 # ================= MAIN =================
 def main():
-
     print("MAIN START")
 
     app = ApplicationBuilder().token(TOKEN).build()
@@ -154,6 +145,6 @@ def main():
 
     app.run_polling()
 
-
-if _name_ == "_main_":
+# ================= START =================
+if __name__ == "__main__":
     main()
