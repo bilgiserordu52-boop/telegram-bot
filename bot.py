@@ -33,21 +33,34 @@ deploy_mode = False
 def is_admin(uid):
     return uid in admins or uid == ADMIN_ID
 
-# ================= LOGIN =================
+# ================= COMMANDS =================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Bot aktif\n/help")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "/start - başlat\n"
+        "/help - yardım\n"
+        "/login 1234 - admin giriş\n"
+        "/deploy - kod gönder"
+    )
+
+# ================= LOGIN (FIXED) =================
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    text = update.message.text.split()
+    parts = update.message.text.split()
 
-    if len(text) < 2:
+    if len(parts) < 2:
         await update.message.reply_text("Kullanım: /login 1234")
         return
 
-    password = text[1]
+    password = parts[1]
 
     if password == ADMIN_PASSWORD:
         admins.add(uid)
-        await update.message.reply_text("✅ Login başarılı")
+        await update.message.reply_text("✅ Admin giriş başarılı")
     else:
         await update.message.reply_text("❌ Hatalı şifre")
 
@@ -64,13 +77,11 @@ async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📦 Kod gönder (bot.py)")
 
 # ================= MESSAGE HANDLER =================
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global deploy_mode
 
     uid = update.effective_user.id
     text = update.message.text
-
-    users.add(uid)
 
     # ========== DEPLOY MODE ==========
     if deploy_mode and is_admin(uid):
@@ -97,41 +108,3 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         r = requests.put(url, json=data, headers=headers)
 
         deploy_mode = False
-
-        await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
-        return
-
-    # ========== NORMAL CHAT ==========
-    t = text.lower()
-
-    if t == "selam":
-        await update.message.reply_text("Selam 👋")
-
-    elif t in ["nasılsın", "naber"]:
-        await update.message.reply_text("İyiyim 👍 sen nasılsın?")
-
-    elif t in ["kimsin", "bot"]:
-        await update.message.reply_text("Ben senin botunum 🤖")
-
-# ================= START =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Bot aktif!\n"
-        "/login 1234\n"
-        "/deploy\n"
-    )
-
-# ================= MAIN =================
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("login", login))
-    app.add_handler(CommandHandler("deploy", deploy))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-
-    print("🚀 BOT RUNNING")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
