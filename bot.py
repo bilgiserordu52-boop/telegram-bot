@@ -1,14 +1,9 @@
 import os
-
-TOKEN = os.getenv("TOKEN")
-
-print("TOKEN", TOKEN)
-print("BOT STARTING")
-
 import json
 import base64
 import logging
 import requests
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -17,6 +12,13 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
+TOKEN = os.getenv("TOKEN")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+
+print("TOKEN:", TOKEN)
+print("BOT STARTING")
 
 # ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
@@ -114,3 +116,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         r = requests.put(url, json=data, headers=headers)
 
         deploy_mode = False
+await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
+        return
+
+    # ===== NORMAL CHAT =====
+    t = text.lower()
+
+    if t == "selam":
+        await update.message.reply_text("Selam 👋")
+
+    elif t in ["nasılsın", "naber"]:
+        await update.message.reply_text("İyiyim 👍")
+
+    elif t in ["kimsin", "bot"]:
+        await update.message.reply_text("Ben senin botunum 🤖")
+
+
+# ================= MAIN =================
+def main():
+
+    print("MAIN START")
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    print("APP BUILT")
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("login", login))
+    app.add_handler(CommandHandler("deploy", deploy))
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+
+    print("🚀 BOT RUNNING")
+
+    app.run_polling()
+
+
+if _name_ == "_main_":
+    main()
