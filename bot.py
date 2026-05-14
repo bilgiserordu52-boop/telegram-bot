@@ -1,6 +1,7 @@
 import time
 import logging
 import json
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,11 +12,10 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = "8945412773:AAFRsFVmYqqcgzSwidMVo-VN3uK59ELEiEE"
+TOKEN = os.getenv("TOKEN")
 ADMIN_ID = 8607713044
 
-users = load_users()
-admins = load_admins()
+
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -29,8 +29,8 @@ def load_users():
     try:
         with open("users.json", "r") as f:
             return set(json.load(f))
-        except:
-            return set()
+    except:
+        return set()
 
 def save_users(users):
     with open("users.json", "w") as f:
@@ -43,8 +43,11 @@ def load_admins():
     except:
         return {8607713044}
 
+users = load_users()
+admins = load_admins()
+
 def is_admin(uid):
-    return uid in admins_sessions and (time.time() - admin_sessions[uid]) < SESSION_TIMEOUT
+    return uid in admins
 
 
 def count_users():
@@ -79,8 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users.add(uid)
 
     if is_admin(uid):
-        touch(uid)
-        await update.message.reply_text("👮 Admin Menü", reply_markup=admin_menu())
+            await update.message.reply_text("👮 Admin Menü", reply_markup=admin_menu())
     else:
         await update.message.reply_text("👤 Kullanıcı Menü", reply_markup=main_menu())
 
@@ -89,7 +91,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
     if is_admin(uid):
-        touch(uid)
+        
         await update.message.reply_text("👮 Admin Menü", reply_markup=admin_menu())
     else:
         await update.message.reply_text("👤 Kullanıcı Menü", reply_markup=main_menu())
