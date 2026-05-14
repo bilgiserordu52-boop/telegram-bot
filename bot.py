@@ -1,3 +1,6 @@
+print("TOKEN", TOKEN)
+print("BOT STARTING")
+
 import os
 import json
 import base64
