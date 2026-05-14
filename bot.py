@@ -86,6 +86,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("👤 Kullanıcı Menü", reply_markup=main_menu())
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 Bot Komutları:\n\n"
+        "/start - Menü\n"
+        "/menu - Ana menü\n"
+        "/help - Yardım\n\n"
+        "📌 Özellikler:\n"
+        "- Selam yaz → cevap verir\n"
+        "- Admin panel mevcut\n"
+        "- Stats görebilirsin"
+    )
+
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -107,6 +119,20 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "selam":
         await update.message.reply_text("Selam 👋")
+    elif text in ["nasılsın", "naber"]:
+    await update.message.reply_text("İyiyim 👍 sen nasılsın?")
+
+elif text in ["ne yapabilirsin", "ne işe yararsın"]:
+    await update.message.reply_text(
+        "Ben bir Telegram botuyum 🤖\n"
+        "- Menü sistemi\n"
+        "- Admin panel\n"
+        "- Kullanıcı istatistikleri\n"
+        "- Broadcast sistemi"
+    )
+
+elif text in ["bot", "kimsin"]:
+    await update.message.reply_text("Ben senin özel Telegram botunum 😎")
 
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,6 +179,7 @@ def main():
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messages))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CommandHandler("help", help_command))
 
     print("🚀 BOT RUNNING")
     app.run_polling()
