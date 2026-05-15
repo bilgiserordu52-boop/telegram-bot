@@ -2,26 +2,33 @@ import os
 import base64
 import requests
 import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters
+)
 
 # ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
-GITHUB_REPO = os.getenv("GITHUB_REPO")  # user/repo
+GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
-admins = set()
-deploy_mode = set()
+ADMINS = set([ADMIN_ID])
+deploy_pending = set()
 
 # ================= SECURITY =================
-def is_admin(uid: int):
-    return uid == ADMIN_ID or uid in admins
+def is_admin(uid):
+    return uid in ADMINS
 
-# ================= GITHUB HELPERS =================
-def github_headers():
+# ================= GITHUB CORE =================
+def headers():
     return {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json"
@@ -29,135 +36,178 @@ def github_headers():
 
 def get_file():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-    r = requests.get(url, headers=github_headers())
+    r = requests.get(url, headers=headers())
     return r.json()
 
-def push_file(code: str, message="deploy"):
-    data_old = get_file()
-    sha = data_old["sha"]
+def push_code(code, msg="deploy"):
+    file = get_file()
+    sha = file["sha"]
 
     encoded = base64.b64encode(code.encode()).decode()
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
 
     payload = {
-        "message": message,
+        "message": msg,
         "content": encoded,
         "sha": sha
     }
 
-    r = requests.put(url, json=payload, headers=github_headers())
+    r = requests.put(url, json=payload, headers=headers())
     return r.status_code in [200, 201], r.text
 
-# ================= START =================
+def last_commit():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
+    r = requests.get(url, headers=headers()).json()
+
+    if isinstance(r, list) and r:
+        return r[0]["sha"]
+    return "no commit"
+
+def ci_status():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs"
+    r = requests.get(url, headers=headers()).json()
+
+    runs = r.get("workflow_runs", [])
+    if not runs:
+        return "NO CI", "UNKNOWN"
+
+    last = runs[0]
+    return last["status"], last["conclusion"]
+
+def last_logs():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs"
+    r = requests.get(url, headers=headers()).json()
+
+    runs = r.get("workflow_runs", [])[:3]
+
+    msg = "📜 LAST CI RUNS:\n\n"
+    for run in runs:
+        msg += f"{run['name']} | {run['status']} | {run['conclusion']}\n"
+
+    return msg
+
+def rollback_sha():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
+    r = requests.get(url, headers=headers()).json()
+
+    if isinstance(r, list) and len(r) > 1:
+        return r[1]["sha"]
+    return None
+
+# ================= PANEL UI =================
+def panel_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
+        [InlineKeyboardButton("⚠️ Confirm Deploy", callback_data="deploy_confirm")],
+        [InlineKeyboardButton("📦 Version", callback_data="version")],
+        [InlineKeyboardButton("🧪 CI Status", callback_data="ci")],
+        [InlineKeyboardButton("📜 Logs", callback_data="logs")],
+        [InlineKeyboardButton("↩️ Rollback Safe", callback_data="rollback")],
+        [InlineKeyboardButton("📊 Status", callback_data="status")],
+        [InlineKeyboardButton("🔄 Refresh", callback_data="refresh")]
+    ])
+
+# ================= COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot aktif")
 
-# ================= LOGIN =================
-async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    parts = update.message.text.split()
-
-    if len(parts) < 2:
-        await update.message.reply_text("Kullanım: /login 1234")
-        return
-
-    if parts[1] == "1234" and uid == ADMIN_ID:
-        admins.add(uid)
-        await update.message.reply_text("✅ Admin giriş başarılı")
-    else:
-        await update.message.reply_text("❌ Hatalı giriş")
-
-# ================= DEPLOY =================
-async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_admin(uid):
         return await update.message.reply_text("❌ Yetki yok")
 
-    deploy_mode.add(uid)
-    await update.message.reply_text("📦 Kod gönder (tek mesaj veya kısa kod)")
+    await update.message.reply_text("🛠 PRO MAX DEVOPS PANEL", reply_markup=panel_keyboard())
 
-# ================= VERSION =================
-def get_last_commit():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
-    r = requests.get(url, headers=github_headers())
-    data = r.json()
+# ================= CALLBACK ENGINE =================
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
 
-    if isinstance(data, list) and len(data) > 0:
-        return data[0]["sha"]
-    return None
+    await q.answer()
 
-async def version(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sha = get_last_commit()
-    if sha:
-        await update.message.reply_text(f"📦 Last commit:\n{sha}")
-    else:
-        await update.message.reply_text("❌ commit yok")
-
-# ================= ROLLBACK =================
-async def rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
     if not is_admin(uid):
-        return await update.message.reply_text("❌ Yetki yok")
+        return await q.edit_message_text("❌ Yetki yok")
 
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
-    r = requests.get(url, headers=github_headers())
-    commits = r.json()
+    data = q.data
 
-    if not isinstance(commits, list) or len(commits) < 2:
-        return await update.message.reply_text("❌ rollback yok")
+    # 🚀 DEPLOY START
+    if data == "deploy":
+        deploy_pending.add(uid)
+        return await q.edit_message_text("⚠️ Deploy onaylamak için 'Confirm Deploy' bas")
 
-    file_data = get_file()
+    # ⚠️ DEPLOY CONFIRM
+    if data == "deploy_confirm":
+        if uid not in deploy_pending:
+            return await q.edit_message_text("❌ Önce deploy başlat")
 
-    # decode current content (safe rollback)
-    content = base64.b64decode(file_data["content"]).decode()
+        deploy_pending.remove(uid)
 
-    payload = {
-        "message": "rollback",
-        "content": base64.b64encode(content.encode()).decode(),
-        "sha": file_data["sha"]
-    }
+        # mesaj text yoksa fallback
+        code = "auto deploy from panel"
 
-    url_file = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-    r2 = requests.put(url_file, json=payload, headers=github_headers())
+        ok, res = push_code(code, "deploy")
 
-    if r2.status_code in [200, 201]:
-        await update.message.reply_text("↩️ Rollback OK")
-    else:
-        await update.message.reply_text("❌ rollback failed")
+        return await q.edit_message_text("🚀 Deploy OK" if ok else f"❌ ERROR:\n{res}")
+
+    # 📦 VERSION
+    if data == "version":
+        return await q.edit_message_text(f"📦 Last commit:\n{last_commit()}")
+
+    # 🧪 CI
+    if data == "ci":
+        s, c = ci_status()
+        return await q.edit_message_text(f"🧪 CI:\nStatus: {s}\nResult: {c}")
+
+    # 📜 LOGS
+    if data == "logs":
+        return await q.edit_message_text(last_logs())
+
+    # 📊 STATUS
+    if data == "status":
+        msg = f"""
+🟢 SYSTEM STATUS
+
+Bot: RUNNING
+Repo: {GITHUB_REPO}
+Admins: {len(ADMINS)}
+Deploy: ACTIVE
+"""
+        return await q.edit_message_text(msg)
+
+    # ↩️ ROLLBACK
+    if data == "rollback":
+        sha = rollback_sha()
+
+        if not sha:
+            return await q.edit_message_text("❌ No rollback point")
+
+        ok, res = push_code(f"rollback to {sha}", "rollback")
+
+        return await q.edit_message_text("↩️ Rollback OK" if ok else f"❌ FAIL:\n{res}")
+
+    # 🔄 REFRESH
+    if data == "refresh":
+        return await admin_panel(update, context)
 
 # ================= MESSAGE HANDLER =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
-    if uid in deploy_mode:
-        deploy_mode.remove(uid)
-
-        ok, res = push_file(text, "telegram deploy")
-
-        if ok:
-            await update.message.reply_text("🚀 Deploy OK")
-        else:
-            await update.message.reply_text(f"❌ GitHub error: {res}")
-        return
-
     if text.lower() == "selam":
-        await update.message.reply_text("Selam 👋")
+        return await update.message.reply_text("Selam 👋")
 
 # ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("login", login))
-    app.add_handler(CommandHandler("deploy", deploy))
-    app.add_handler(CommandHandler("version", version))
-    app.add_handler(CommandHandler("rollback", rollback))
-
+    app.add_handler(CommandHandler("admin", admin_panel))
+    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("BOT RUNNING")
+    print("PRO MAX BOT RUNNING")
     app.run_polling()
 
 if __name__ == "__main__":
