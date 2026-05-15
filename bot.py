@@ -7,11 +7,16 @@ async def handle(update, context):
     if not update.message or not update.message.text:
         return
 
-    text = update.message.text.strip().lower()
+    text = update.message.text.lower().strip()
 
-    print("INCOMING:", text)  # DEBUG
+    print("IN:", text)
 
-    # ---------------- DEPLOY ----------------
+    # START
+    if text == "/start":
+        await update.message.reply_text("Bot aktif 🚀")
+        return
+
+    # DEPLOY SYSTEM
     if text.startswith("/deploy"):
         parts = text.split()
 
@@ -20,15 +25,10 @@ async def handle(update, context):
             module = parts[1]
 
         if module not in ["core", "ui", "full"]:
-            await update.message.reply_text("Usage: /deploy core|ui|full")
+            await update.message.reply_text("Kullanım: /deploy core | ui | full")
             return
 
         await deploy_module(module, update.message)
-        return
-
-    # ---------------- START ----------------
-    if text == "/start":
-        await update.message.reply_text("Bot aktif 🚀")
         return
 
     await update.message.reply_text("Komut yok")
@@ -37,10 +37,10 @@ async def handle(update, context):
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    # ⚠️ TÜM MESAJLARI AL
+    # HER MESAJI AL (EN KRİTİK NOKTA)
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("BOT RUNNING FIXED ROUTER V2")
+    print("BOT RUNNING FINAL STABLE VERSION")
 
     app.run_polling()
 
