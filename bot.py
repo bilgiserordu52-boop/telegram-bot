@@ -22,18 +22,27 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 ADMINS = set([ADMIN_ID])
-deploy_pending = set()
-user_page = {}
 
+deploy_pending = set()
+user_state = {}
+
+# ================= SERVER STATE =================
 start_time = time.time()
+last_ping = time.time()
+
+def uptime():
+    return round(time.time() - start_time, 2)
+
+def heartbeat():
+    global last_ping
+    last_ping = time.time()
+
+def is_alive():
+    return (time.time() - last_ping) < 60
 
 # ================= SECURITY =================
 def is_admin(uid):
     return uid in ADMINS
-
-# ================= SYSTEM =================
-def uptime():
-    return round(time.time() - start_time, 2)
 
 # ================= GITHUB =================
 def headers():
@@ -44,8 +53,7 @@ def headers():
 
 def get_file():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-    r = requests.get(url, headers=headers())
-    return r.json()
+    return requests.get(url, headers=headers()).json()
 
 def push_code(code, msg="deploy"):
     file = get_file()
@@ -120,98 +128,86 @@ def panel():
         [InlineKeyboardButton("🧪 CI", callback_data="ci")],
         [InlineKeyboardButton("📜 Logs", callback_data="logs")],
         [InlineKeyboardButton("↩️ Rollback", callback_data="rollback")],
-        [InlineKeyboardButton("📊 Status", callback_data="status")],
-        [InlineKeyboardButton("📁 Projects", callback_data="projects")],
-        [InlineKeyboardButton("🔄 Refresh", callback_data="refresh")]
+        [InlineKeyboardButton("🖥 Server Control", callback_data="server")],
+        [InlineKeyboardButton("📊 Status", callback_data="status")]
     ] + nav())
 
 # ================= CORE =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Bot aktif")
+    await update.message.reply_text("🤖 PRO MAX BOT ACTIVE")
 
 async def home(update, context):
     uid = update.effective_user.id
     if not is_admin(uid):
         return await update.message.reply_text("❌ Yetki yok")
 
-    await update.message.reply_text("🛠 DEVOPS PANEL", reply_markup=panel())
+    heartbeat()
 
-# ================= CALLBACK =================
+    await update.message.reply_text(
+        "🛠 DEVOPS DASHBOARD",
+        reply_markup=panel()
+    )
+
+# ================= CALLBACK ENGINE =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
-
     await q.answer()
 
     if not is_admin(uid):
         return await q.edit_message_text("❌ Yetki yok")
 
+    heartbeat()
     data = q.data
 
-    # BACK / HOME
-    if data in ["back", "home"]:
+    # ================= NAV =================
+    if data in ["home", "back"]:
         return await home(update, context)
 
-    # CANCEL
     if data == "cancel":
         deploy_pending.discard(uid)
-        return await q.edit_message_text("❌ İptal edildi", reply_markup=panel())
+        return await q.edit_message_text("❌ Cancelled", reply_markup=panel())
 
-    # DEPLOY
+    # ================= DEPLOY =================
     if data == "deploy":
         deploy_pending.add(uid)
+
         return await q.edit_message_text(
-            "📦 Deploy mode\nOnayla veya iptal et",
+            "📦 Deploy Mode\nConfirm or Cancel",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚠️ CONFIRM", callback_data="deploy_confirm")],
-                *nav()
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back")]
             ])
         )
 
     if data == "deploy_confirm":
         if uid not in deploy_pending:
-            return await q.edit_message_text("❌ Önce deploy başlat")
+            return await q.edit_message_text("❌ Start deploy first")
 
         deploy_pending.remove(uid)
 
-        ok, res = push_code("deploy", "deploy")
+        ok, res = push_code("deploy from panel", "deploy")
 
         return await q.edit_message_text(
             "🚀 DEPLOY OK" if ok else f"❌ FAIL:\n{res}",
             reply_markup=panel()
         )
 
-    # VERSION
+    # ================= VERSION =================
     if data == "version":
         return await q.edit_message_text(f"📦 {last_commit()}", reply_markup=panel())
 
-    # CI
+    # ================= CI =================
     if data == "ci":
         s, c = ci_status()
         return await q.edit_message_text(f"🧪 {s} / {c}", reply_markup=panel())
 
-    # LOGS
+    # ================= LOGS =================
     if data == "logs":
         return await q.edit_message_text(last_logs(), reply_markup=panel())
 
-    # STATUS
-    if data == "status":
-        return await q.edit_message_text(
-            f"""
-🟢 SYSTEM
-
-Uptime: {uptime()} sec
-Repo: {GITHUB_REPO}
-Admins: {len(ADMINS)}
-""",
-            reply_markup=panel()
-        )
-
-    # PROJECTS
-    if data == "projects":
-        return await q.edit_message_text("📁 Main Project Active", reply_markup=panel())
-
-    # ROLLBACK
+    # ================= ROLLBACK =================
     if data == "rollback":
         sha = rollback_sha()
 
@@ -225,12 +221,54 @@ Admins: {len(ADMINS)}
             reply_markup=panel()
         )
 
-    # REFRESH
-    if data == "refresh":
-        return await home(update, context)
+    # ================= SERVER CONTROL =================
+    if data == "server":
+        status = "🟢 ONLINE" if is_alive() else "🔴 OFFLINE"
+
+        return await q.edit_message_text(
+            f"""
+🖥 SERVER CONTROL
+
+Status: {status}
+Uptime: {uptime()} sec
+Last Ping: {round(time.time() - last_ping, 1)} sec ago
+            """,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📡 Ping", callback_data="ping")],
+                [InlineKeyboardButton("🔄 Restart (Sim)", callback_data="restart")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back")]
+            ])
+        )
+
+    if data == "ping":
+        heartbeat()
+        return await q.edit_message_text("📡 PONG", reply_markup=panel())
+
+    if data == "restart":
+        heartbeat()
+        return await q.edit_message_text(
+            "🔄 Restart requested (manual/railway needed)",
+            reply_markup=panel()
+        )
+
+    # ================= STATUS =================
+    if data == "status":
+        return await q.edit_message_text(
+            f"""
+🟢 SYSTEM STATUS
+
+Uptime: {uptime()} sec
+Health: {"OK" if is_alive() else "DEAD"}
+Repo: {GITHUB_REPO}
+Admins: {len(ADMINS)}
+            """,
+            reply_markup=panel()
+        )
 
 # ================= MESSAGE =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    heartbeat()
+
     text = update.message.text
 
     if text.lower() == "selam":
@@ -246,7 +284,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("PRO PANEL RUNNING")
+    print("PRO MAX v3 RUNNING")
     app.run_polling()
 
 if __name__ == "__main__":
