@@ -2,17 +2,25 @@ name: Bot CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "staging" ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Show files
-      run: ls -la
+      - name: Show files
+        run: ls -la
 
-    - name: Check bot file
-      run: python -m py_compile ./bot.py
+      - name: Syntax check
+        run: python -m py_compile bot.py
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger deploy hook
+        run: curl -X POST ${{ secrets.RENDER_HOOK || secrets.RAILWAY_HOOK }}
