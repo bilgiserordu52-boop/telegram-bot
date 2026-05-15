@@ -1,46 +1,53 @@
 import os
-import logging
+import base64
 import requests
+import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
-GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_REPO = os.getenv("GITHUB_REPO")  # user/repo
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
 admins = set()
 deploy_mode = set()
-history = []  # rollback için
 
-# ================= HELPERS =================
-def is_admin(uid):
+# ================= SECURITY =================
+def is_admin(uid: int):
     return uid == ADMIN_ID or uid in admins
 
-def github_push(code: str, msg="auto deploy"):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-
-    headers = {
+# ================= GITHUB HELPERS =================
+def github_headers():
+    return {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json"
     }
 
-    r = requests.get(url, headers=headers)
-    sha = r.json()["sha"]
+def get_file():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+    r = requests.get(url, headers=github_headers())
+    return r.json()
 
-    import base64
+def push_file(code: str, message="deploy"):
+    data_old = get_file()
+    sha = data_old["sha"]
+
     encoded = base64.b64encode(code.encode()).decode()
 
-    data = {
-        "message": msg,
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+
+    payload = {
+        "message": message,
         "content": encoded,
         "sha": sha
     }
 
-    res = requests.put(url, json=data, headers=headers)
-    return res.status_code in [200, 201], res.text
+    r = requests.put(url, json=payload, headers=github_headers())
+    return r.status_code in [200, 201], r.text
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,9 +64,9 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if parts[1] == "1234" and uid == ADMIN_ID:
         admins.add(uid)
-        await update.message.reply_text("✅ Admin giriş")
+        await update.message.reply_text("✅ Admin giriş başarılı")
     else:
-        await update.message.reply_text("❌ Hatalı")
+        await update.message.reply_text("❌ Hatalı giriş")
 
 # ================= DEPLOY =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,14 +75,24 @@ async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Yetki yok")
 
     deploy_mode.add(uid)
-    await update.message.reply_text("📦 Kod gönder")
+    await update.message.reply_text("📦 Kod gönder (tek mesaj veya kısa kod)")
 
 # ================= VERSION =================
+def get_last_commit():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
+    r = requests.get(url, headers=github_headers())
+    data = r.json()
+
+    if isinstance(data, list) and len(data) > 0:
+        return data[0]["sha"]
+    return None
+
 async def version(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if history:
-        await update.message.reply_text(f"📦 Last commit:\n{history[-1]}")
+    sha = get_last_commit()
+    if sha:
+        await update.message.reply_text(f"📦 Last commit:\n{sha}")
     else:
-        await update.message.reply_text("📦 No history")
+        await update.message.reply_text("❌ commit yok")
 
 # ================= ROLLBACK =================
 async def rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,18 +100,33 @@ async def rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(uid):
         return await update.message.reply_text("❌ Yetki yok")
 
-    if len(history) < 2:
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
+    r = requests.get(url, headers=github_headers())
+    commits = r.json()
+
+    if not isinstance(commits, list) or len(commits) < 2:
         return await update.message.reply_text("❌ rollback yok")
 
-    last = history[-2]
+    file_data = get_file()
 
-    ok, err = github_push(last, "rollback")
-    if ok:
-        await update.message.reply_text("↩️ Rollback başarılı")
+    # decode current content (safe rollback)
+    content = base64.b64decode(file_data["content"]).decode()
+
+    payload = {
+        "message": "rollback",
+        "content": base64.b64encode(content.encode()).decode(),
+        "sha": file_data["sha"]
+    }
+
+    url_file = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+    r2 = requests.put(url_file, json=payload, headers=github_headers())
+
+    if r2.status_code in [200, 201]:
+        await update.message.reply_text("↩️ Rollback OK")
     else:
-        await update.message.reply_text(f"❌ hata: {err}")
+        await update.message.reply_text("❌ rollback failed")
 
-# ================= MESSAGE =================
+# ================= MESSAGE HANDLER =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
@@ -102,19 +134,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid in deploy_mode:
         deploy_mode.remove(uid)
 
-        code = text # artık direkt gelen mesaj kod
-
-        history.append(code)
-        if len(history) > 5:
-            history.pop(0)
-
-        ok, err = github_push(code, "deploy")
+        ok, res = push_file(text, "telegram deploy")
 
         if ok:
             await update.message.reply_text("🚀 Deploy OK")
         else:
-            await update.message.reply_text(f"❌ GitHub error: {err}")
-
+            await update.message.reply_text(f"❌ GitHub error: {res}")
         return
 
     if text.lower() == "selam":
