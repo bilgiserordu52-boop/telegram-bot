@@ -1,32 +1,20 @@
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import config
-from deploy.engine import deploy_module
 
 
 async def handle(update, context):
-    text = update.message.text or ""
-    text = text.lower().strip()
+    text = (update.message.text or "").strip()
 
-    print("MSG:", text)
+    print("GELEN:", text)
 
     # START
     if text == "/start":
         await update.message.reply_text("Bot aktif 🚀")
         return
 
-    # DEPLOY (EN SADE VE GARANTİ PARSE)
-    if "/deploy" in text:
-        parts = text.split()
-
-        module = "full"
-        if len(parts) > 1:
-            module = parts[1]
-
-        if module not in ["core", "ui", "full"]:
-            await update.message.reply_text("Kullanım: /deploy core | ui | full")
-            return
-
-        await deploy_module(module, update.message)
+    # DEPLOY TEST (SADECE MESAJ KONTROL)
+    if text.startswith("/deploy"):
+        await update.message.reply_text(f"Deploy yakalandı: {text}")
         return
 
     await update.message.reply_text("Komut yok")
@@ -35,10 +23,10 @@ async def handle(update, context):
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    # ⚠️ KRİTİK: HER ŞEYİ AL
+    # ⚠️ EN ÖNEMLİ SATIR
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("BOT RUNNING FIXED ROUTER FINAL")
+    print("BOT RUNNING MINIMAL FIX")
 
     app.run_polling()
 
