@@ -132,6 +132,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif t in ["bot", "kimsin"]:
         await update.message.reply_text("Ben senin botunum 🤖")
 
+
+    if text.strip() == "1+1":
+        await update.message.reply_text("2")
+
 # ================= MAIN =================
 def main():
     if not TOKEN:
