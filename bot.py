@@ -1,31 +1,50 @@
 import os
-import base64
-import requests
 import logging
+import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# ================= ENV =================
 TOKEN = os.getenv("TOKEN")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-# ================= LOG =================
 logging.basicConfig(level=logging.INFO)
 
-# ================= STATE =================
 admins = set()
 deploy_mode = set()
+history = []  # rollback için
 
-# ================= SECURITY =================
-def is_admin(uid: int):
+# ================= HELPERS =================
+def is_admin(uid):
     return uid == ADMIN_ID or uid in admins
+
+def github_push(code: str, msg="auto deploy"):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    r = requests.get(url, headers=headers)
+    sha = r.json()["sha"]
+
+    import base64
+    encoded = base64.b64encode(code.encode()).decode()
+
+    data = {
+        "message": msg,
+        "content": encoded,
+        "sha": sha
+    }
+
+    res = requests.put(url, json=data, headers=headers)
+    return res.status_code in [200, 201], res.text
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Bot aktif\n/login <password>")
+    await update.message.reply_text("🤖 Bot aktif")
 
 # ================= LOGIN =================
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,95 +55,79 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kullanım: /login 1234")
         return
 
-    if parts[1] == ADMIN_PASSWORD and uid == ADMIN_ID:
+    if parts[1] == "1234" and uid == ADMIN_ID:
         admins.add(uid)
-        await update.message.reply_text("✅ Admin giriş başarılı")
+        await update.message.reply_text("✅ Admin giriş")
     else:
-        await update.message.reply_text("❌ Hatalı şifre veya yetkisiz")
+        await update.message.reply_text("❌ Hatalı")
 
-# ================= DEPLOY MODE =================
+# ================= DEPLOY =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-
     if not is_admin(uid):
-        await update.message.reply_text("❌ Yetki yok")
-        return
+        return await update.message.reply_text("❌ Yetki yok")
 
     deploy_mode.add(uid)
-    await update.message.reply_text("📦 bot.py kodunu gönder")
+    await update.message.reply_text("📦 Kod gönder")
 
-# ================= GET SHA =================
-def get_sha():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    r = requests.get(url, headers=headers)
-    return r.json()["sha"]
+# ================= VERSION =================
+async def version(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if history:
+        await update.message.reply_text(f"📦 Last commit:\n{history[-1]}")
+    else:
+        await update.message.reply_text("📦 No history")
 
-# ================= HANDLE =================
+# ================= ROLLBACK =================
+async def rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not is_admin(uid):
+        return await update.message.reply_text("❌ Yetki yok")
+
+    if len(history) < 2:
+        return await update.message.reply_text("❌ rollback yok")
+
+    last = history[-2]
+
+    ok, err = github_push(last, "rollback")
+    if ok:
+        await update.message.reply_text("↩️ Rollback başarılı")
+    else:
+        await update.message.reply_text(f"❌ hata: {err}")
+
+# ================= MESSAGE =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
-    # ---------------- DEPLOY MODE ----------------
     if uid in deploy_mode:
         deploy_mode.remove(uid)
 
-        if len(text) < 20:
-            await update.message.reply_text("❌ Kod çok kısa")
-            return
+        history.append(text)
+        if len(history) > 3:
+            history.pop(0)
 
-        try:
-            encoded = base64.b64encode(text.encode()).decode()
-            sha = get_sha()
+        ok, err = github_push(text, "telegram deploy")
 
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-
-            data = {
-                "message": "telegram deploy update",
-                "content": encoded,
-                "sha": sha
-            }
-
-            headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json"
-            }
-
-            r = requests.put(url, json=data, headers=headers)
-
-            if r.status_code in [200, 201]:
-                await update.message.reply_text("🚀 Deploy başarılı")
-            else:
-                await update.message.reply_text(f"❌ GitHub error: {r.text}")
-
-        except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+        if ok:
+            await update.message.reply_text("🚀 Deploy OK + GitHub push")
+        else:
+            await update.message.reply_text(f"❌ GitHub error: {err}")
 
         return
 
-    # ---------------- NORMAL CHAT ----------------
-    t = text.lower()
-
-    if t == "selam":
+    if text.lower() == "selam":
         await update.message.reply_text("Selam 👋")
-
-    elif t == "naber":
-        await update.message.reply_text("İyiyim 👍")
-
-    elif t == "version":
-        await update.message.reply_text("📦 Bot çalışıyor")
 
 # ================= MAIN =================
 def main():
-    if not TOKEN:
-        print("TOKEN YOK")
-        return
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("deploy", deploy))
+    app.add_handler(CommandHandler("version", version))
+    app.add_handler(CommandHandler("rollback", rollback))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
     print("BOT RUNNING")
