@@ -21,6 +21,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# test watcher
-# watcher test 123
-# staging test
