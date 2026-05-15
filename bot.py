@@ -24,12 +24,16 @@ logging.basicConfig(level=logging.INFO)
 ADMINS = set([ADMIN_ID])
 
 deploy_pending = set()
-user_state = {}
+code_history = []
 
-# ================= SERVER STATE =================
 start_time = time.time()
 last_ping = time.time()
 
+# ================= SECURITY =================
+def is_admin(uid):
+    return uid in ADMINS
+
+# ================= SERVER =================
 def uptime():
     return round(time.time() - start_time, 2)
 
@@ -40,9 +44,11 @@ def heartbeat():
 def is_alive():
     return (time.time() - last_ping) < 60
 
-# ================= SECURITY =================
-def is_admin(uid):
-    return uid in ADMINS
+# ================= DETECTOR =================
+def detect_type(text):
+    if text.startswith("import") or "def " in text or "print(" in text:
+        return "code"
+    return "message"
 
 # ================= GITHUB =================
 def headers():
@@ -72,6 +78,14 @@ def push_code(code, msg="deploy"):
     r = requests.put(url, json=payload, headers=headers())
     return r.status_code in [200, 201], r.text
 
+def smart_update(code):
+    code_history.append(code)
+
+    if len(code_history) > 10:
+        code_history.pop(0)
+
+    return push_code(code, "smart update")
+
 def last_commit():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
     r = requests.get(url, headers=headers()).json()
@@ -79,37 +93,6 @@ def last_commit():
     if isinstance(r, list) and r:
         return r[0]["sha"]
     return "no commit"
-
-def ci_status():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs"
-    r = requests.get(url, headers=headers()).json()
-
-    runs = r.get("workflow_runs", [])
-    if not runs:
-        return "NO CI", "UNKNOWN"
-
-    last = runs[0]
-    return last["status"], last["conclusion"]
-
-def last_logs():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs"
-    r = requests.get(url, headers=headers()).json()
-
-    runs = r.get("workflow_runs", [])[:3]
-
-    msg = "📜 LAST RUNS:\n\n"
-    for run in runs:
-        msg += f"{run['name']} | {run['status']} | {run['conclusion']}\n"
-
-    return msg
-
-def rollback_sha():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
-    r = requests.get(url, headers=headers()).json()
-
-    if isinstance(r, list) and len(r) > 1:
-        return r[1]["sha"]
-    return None
 
 # ================= UI =================
 def nav():
@@ -125,16 +108,14 @@ def panel():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
         [InlineKeyboardButton("📦 Version", callback_data="version")],
-        [InlineKeyboardButton("🧪 CI", callback_data="ci")],
-        [InlineKeyboardButton("📜 Logs", callback_data="logs")],
-        [InlineKeyboardButton("↩️ Rollback", callback_data="rollback")],
-        [InlineKeyboardButton("🖥 Server Control", callback_data="server")],
+        [InlineKeyboardButton("🧠 History", callback_data="history")],
+        [InlineKeyboardButton("🖥 Server", callback_data="server")],
         [InlineKeyboardButton("📊 Status", callback_data="status")]
     ] + nav())
 
 # ================= CORE =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 PRO MAX BOT ACTIVE")
+    await update.message.reply_text("🤖 PRO SELF UPDATE BOT ACTIVE")
 
 async def home(update, context):
     uid = update.effective_user.id
@@ -144,11 +125,11 @@ async def home(update, context):
     heartbeat()
 
     await update.message.reply_text(
-        "🛠 DEVOPS DASHBOARD",
+        "🛠 DEVOPS PANEL",
         reply_markup=panel()
     )
 
-# ================= CALLBACK ENGINE =================
+# ================= CALLBACK =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
@@ -160,18 +141,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     heartbeat()
     data = q.data
 
-    # ================= NAV =================
+    # NAV
     if data in ["home", "back"]:
         return await home(update, context)
 
     if data == "cancel":
-        deploy_pending.discard(uid)
+        deploy_pending.clear()
         return await q.edit_message_text("❌ Cancelled", reply_markup=panel())
 
-    # ================= DEPLOY =================
+    # DEPLOY
     if data == "deploy":
         deploy_pending.add(uid)
-
         return await q.edit_message_text(
             "📦 Deploy Mode\nConfirm or Cancel",
             reply_markup=InlineKeyboardMarkup([
@@ -187,80 +167,48 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         deploy_pending.remove(uid)
 
-        ok, res = push_code("deploy from panel", "deploy")
+        ok, res = push_code("manual deploy", "deploy")
 
         return await q.edit_message_text(
             "🚀 DEPLOY OK" if ok else f"❌ FAIL:\n{res}",
             reply_markup=panel()
         )
 
-    # ================= VERSION =================
+    # VERSION
     if data == "version":
         return await q.edit_message_text(f"📦 {last_commit()}", reply_markup=panel())
 
-    # ================= CI =================
-    if data == "ci":
-        s, c = ci_status()
-        return await q.edit_message_text(f"🧪 {s} / {c}", reply_markup=panel())
+    # HISTORY
+    if data == "history":
+        msg = "🧠 LAST CODES:\n\n"
+        for i, c in enumerate(code_history[-5:]):
+            msg += f"{i+1}. {c[:40]}\n"
 
-    # ================= LOGS =================
-    if data == "logs":
-        return await q.edit_message_text(last_logs(), reply_markup=panel())
+        return await q.edit_message_text(msg, reply_markup=panel())
 
-    # ================= ROLLBACK =================
-    if data == "rollback":
-        sha = rollback_sha()
-
-        if not sha:
-            return await q.edit_message_text("❌ No rollback point")
-
-        ok, res = push_code(f"rollback {sha}", "rollback")
-
-        return await q.edit_message_text(
-            "↩️ ROLLBACK OK" if ok else f"❌ FAIL:\n{res}",
-            reply_markup=panel()
-        )
-
-    # ================= SERVER CONTROL =================
+    # SERVER
     if data == "server":
         status = "🟢 ONLINE" if is_alive() else "🔴 OFFLINE"
 
         return await q.edit_message_text(
             f"""
-🖥 SERVER CONTROL
+🖥 SERVER
 
 Status: {status}
 Uptime: {uptime()} sec
-Last Ping: {round(time.time() - last_ping, 1)} sec ago
             """,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📡 Ping", callback_data="ping")],
-                [InlineKeyboardButton("🔄 Restart (Sim)", callback_data="restart")],
-                [InlineKeyboardButton("🔙 Back", callback_data="back")]
-            ])
-        )
-
-    if data == "ping":
-        heartbeat()
-        return await q.edit_message_text("📡 PONG", reply_markup=panel())
-
-    if data == "restart":
-        heartbeat()
-        return await q.edit_message_text(
-            "🔄 Restart requested (manual/railway needed)",
             reply_markup=panel()
         )
 
-    # ================= STATUS =================
+    # STATUS
     if data == "status":
         return await q.edit_message_text(
             f"""
-🟢 SYSTEM STATUS
+🟢 SYSTEM
 
-Uptime: {uptime()} sec
-Health: {"OK" if is_alive() else "DEAD"}
 Repo: {GITHUB_REPO}
 Admins: {len(ADMINS)}
+Uptime: {uptime()} sec
             """,
             reply_markup=panel()
         )
@@ -270,6 +218,23 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     heartbeat()
 
     text = update.message.text
+    uid = update.effective_user.id
+
+    if not is_admin(uid):
+        return
+
+    t = detect_type(text)
+
+    # 🧠 SELF UPDATE ENGINE
+    if t == "code":
+        ok, res = smart_update(text)
+
+        if ok:
+            await update.message.reply_text("🧠 Smart Update OK (GitHub)")
+        else:
+            await update.message.reply_text(f"❌ FAIL:\n{res}")
+
+        return
 
     if text.lower() == "selam":
         await update.message.reply_text("Selam 👋")
@@ -284,7 +249,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("PRO MAX v3 RUNNING")
+    print("PRO SELF UPDATE RUNNING")
     app.run_polling()
 
 if __name__ == "__main__":
