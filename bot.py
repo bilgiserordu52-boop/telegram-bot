@@ -4,20 +4,18 @@ from deploy.engine import deploy_module
 
 
 async def handle(update, context):
-    if not update.message or not update.message.text:
-        return
+    text = update.message.text or ""
+    text = text.lower().strip()
 
-    text = update.message.text.lower().strip()
-
-    print("IN:", text)
+    print("MSG:", text)
 
     # START
     if text == "/start":
         await update.message.reply_text("Bot aktif 🚀")
         return
 
-    # DEPLOY SYSTEM
-    if text.startswith("/deploy"):
+    # DEPLOY (EN SADE VE GARANTİ PARSE)
+    if "/deploy" in text:
         parts = text.split()
 
         module = "full"
@@ -37,10 +35,10 @@ async def handle(update, context):
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    # HER MESAJI AL (EN KRİTİK NOKTA)
+    # ⚠️ KRİTİK: HER ŞEYİ AL
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("BOT RUNNING FINAL STABLE VERSION")
+    print("BOT RUNNING FIXED ROUTER FINAL")
 
     app.run_polling()
 
