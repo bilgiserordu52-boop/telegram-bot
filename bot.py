@@ -3,6 +3,7 @@ import base64
 import logging
 import requests
 import json
+import datetime
 
 from telegram import Update
 from telegram.ext import (
@@ -37,6 +38,10 @@ def save_admins():
 
 admins = load_admins()
 deploy_mode = {}
+
+# ================= VERSION =================
+def get_version():
+    return datetime.datetime.now().strftime("v%Y.%m.%d-%H%M")
 
 # ================= ADMIN CHECK =================
 def is_admin(uid: int):
@@ -80,7 +85,7 @@ def get_sha():
     except:
         return None
 
-# ================= DEPLOY COMMAND =================
+# ================= DEPLOY =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
@@ -133,7 +138,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             r = requests.put(url, json=data, headers=headers)
 
             if r.status_code in [200, 201]:
-                await update.message.reply_text("🚀 Deploy başarılı")
+                version = get_version()
+                await update.message.reply_text(
+                    f"🚀 Deploy başarılı\n📦 Versiyon: {version}"
+                )
             else:
                 await update.message.reply_text(f"❌ Hata: {r.text}")
 
@@ -164,18 +172,15 @@ def main():
         return
 
     print("BOT STARTING")
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("deploy", deploy))
-
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("BOT RUNNING")
-
     app.run_polling()
 
 # ================= RUN =================
