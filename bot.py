@@ -1,7 +1,7 @@
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import asyncio
 
-TOKEN = "BOT_TOKEN_BURAYA"
+TOKEN = "8945412773:AAFRsFVmYqqcgzSwidMVo-VN3uK59ELEiEE"
 
 
 # ---------------- DEPLOY ENGINE ----------------
