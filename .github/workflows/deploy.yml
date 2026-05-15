@@ -11,14 +11,8 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.10
+    - name: Show files
+      run: ls -la
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt || true
-
-    - name: Syntax check
-      run: python -m py_compile bot.py  
+    - name: Check bot file
+      run: python -m py_compile ./bot.py
