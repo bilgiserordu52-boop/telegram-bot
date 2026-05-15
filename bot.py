@@ -22,12 +22,13 @@ logging.basicConfig(level=logging.INFO)
 
 ADMINS = set([ADMIN_ID])
 deploy_pending = set()
+user_state = {}
 
 # ================= SECURITY =================
 def is_admin(uid):
     return uid in ADMINS
 
-# ================= GITHUB CORE =================
+# ================= GITHUB =================
 def headers():
     return {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -81,7 +82,7 @@ def last_logs():
 
     runs = r.get("workflow_runs", [])[:3]
 
-    msg = "📜 LAST CI RUNS:\n\n"
+    msg = "📜 LAST RUNS:\n\n"
     for run in runs:
         msg += f"{run['name']} | {run['status']} | {run['conclusion']}\n"
 
@@ -95,29 +96,43 @@ def rollback_sha():
         return r[1]["sha"]
     return None
 
-# ================= PANEL UI =================
+# ================= NAVIGATION =================
+def nav():
+    return [
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="back"),
+            InlineKeyboardButton("🏠 Home", callback_data="home"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+        ]
+    ]
+
 def panel_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
-        [InlineKeyboardButton("⚠️ Confirm Deploy", callback_data="deploy_confirm")],
         [InlineKeyboardButton("📦 Version", callback_data="version")],
         [InlineKeyboardButton("🧪 CI Status", callback_data="ci")],
         [InlineKeyboardButton("📜 Logs", callback_data="logs")],
-        [InlineKeyboardButton("↩️ Rollback Safe", callback_data="rollback")],
+        [InlineKeyboardButton("↩️ Rollback", callback_data="rollback")],
         [InlineKeyboardButton("📊 Status", callback_data="status")],
         [InlineKeyboardButton("🔄 Refresh", callback_data="refresh")]
-    ])
+    ] + nav())
 
-# ================= COMMANDS =================
+# ================= CORE =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot aktif")
 
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def home(update, context):
     uid = update.effective_user.id
+
     if not is_admin(uid):
         return await update.message.reply_text("❌ Yetki yok")
 
-    await update.message.reply_text("🛠 PRO MAX DEVOPS PANEL", reply_markup=panel_keyboard())
+    user_state[uid] = "home"
+
+    await update.message.reply_text(
+        "🛠 MAIN DASHBOARD",
+        reply_markup=panel_keyboard()
+    )
 
 # ================= CALLBACK ENGINE =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,49 +146,78 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = q.data
 
-    # 🚀 DEPLOY START
+    # 🔙 BACK
+    if data == "back":
+        return await home(update, context)
+
+    # 🏠 HOME
+    if data == "home":
+        return await home(update, context)
+
+    # ❌ CANCEL
+    if data == "cancel":
+        deploy_pending.discard(uid)
+        user_state[uid] = "home"
+        return await q.edit_message_text(
+            "❌ İptal edildi",
+            reply_markup=panel_keyboard()
+        )
+
+    # 🚀 DEPLOY MODE
     if data == "deploy":
         deploy_pending.add(uid)
-        return await q.edit_message_text("⚠️ Deploy onaylamak için 'Confirm Deploy' bas")
+        user_state[uid] = "deploy"
 
-    # ⚠️ DEPLOY CONFIRM
+        return await q.edit_message_text(
+            "📦 Deploy mode\nOnaylamak için confirm bas",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚠️ Confirm Deploy", callback_data="deploy_confirm")],
+                *nav()
+            ])
+        )
+
+    # ⚠️ CONFIRM DEPLOY
     if data == "deploy_confirm":
         if uid not in deploy_pending:
             return await q.edit_message_text("❌ Önce deploy başlat")
 
-        deploy_pending.remove(uid)
+        deploy_pending.discard(uid)
 
-        # mesaj text yoksa fallback
-        code = "auto deploy from panel"
+        ok, res = push_code("deploy from panel", "deploy")
 
-        ok, res = push_code(code, "deploy")
-
-        return await q.edit_message_text("🚀 Deploy OK" if ok else f"❌ ERROR:\n{res}")
+        return await q.edit_message_text(
+            "🚀 Deploy OK" if ok else f"❌ FAIL:\n{res}",
+            reply_markup=panel_keyboard()
+        )
 
     # 📦 VERSION
     if data == "version":
-        return await q.edit_message_text(f"📦 Last commit:\n{last_commit()}")
+        return await q.edit_message_text(
+            f"📦 Last commit:\n{last_commit()}",
+            reply_markup=panel_keyboard()
+        )
 
     # 🧪 CI
     if data == "ci":
         s, c = ci_status()
-        return await q.edit_message_text(f"🧪 CI:\nStatus: {s}\nResult: {c}")
+        return await q.edit_message_text(
+            f"🧪 CI STATUS\n{s} / {c}",
+            reply_markup=panel_keyboard()
+        )
 
     # 📜 LOGS
     if data == "logs":
-        return await q.edit_message_text(last_logs())
+        return await q.edit_message_text(
+            last_logs(),
+            reply_markup=panel_keyboard()
+        )
 
     # 📊 STATUS
     if data == "status":
-        msg = f"""
-🟢 SYSTEM STATUS
-
-Bot: RUNNING
-Repo: {GITHUB_REPO}
-Admins: {len(ADMINS)}
-Deploy: ACTIVE
-"""
-        return await q.edit_message_text(msg)
+        return await q.edit_message_text(
+            f"🟢 SYSTEM\nRepo: {GITHUB_REPO}\nAdmins: {len(ADMINS)}",
+            reply_markup=panel_keyboard()
+        )
 
     # ↩️ ROLLBACK
     if data == "rollback":
@@ -182,32 +226,35 @@ Deploy: ACTIVE
         if not sha:
             return await q.edit_message_text("❌ No rollback point")
 
-        ok, res = push_code(f"rollback to {sha}", "rollback")
+        ok, res = push_code(f"rollback {sha}", "rollback")
 
-        return await q.edit_message_text("↩️ Rollback OK" if ok else f"❌ FAIL:\n{res}")
+        return await q.edit_message_text(
+            "↩️ Rollback OK" if ok else f"❌ FAIL:\n{res}",
+            reply_markup=panel_keyboard()
+        )
 
     # 🔄 REFRESH
     if data == "refresh":
-        return await admin_panel(update, context)
+        return await home(update, context)
 
-# ================= MESSAGE HANDLER =================
+# ================= MESSAGE =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
     text = update.message.text
 
     if text.lower() == "selam":
-        return await update.message.reply_text("Selam 👋")
+        await update.message.reply_text("Selam 👋")
 
 # ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_panel))
+    app.add_handler(CommandHandler("admin", home))
+
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("PRO MAX BOT RUNNING")
+    print("PRO MAX UI BOT RUNNING")
     app.run_polling()
 
 if __name__ == "__main__":
