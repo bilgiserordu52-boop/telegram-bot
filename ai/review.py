@@ -2,25 +2,31 @@ def ai_review(code: str):
     score = 0
     reasons = []
 
-    if "while True" in code:
-        score += 40
-        reasons.append("Infinite loop risk")
+    risky_keywords = [
+        "os.system",
+        "eval(",
+        "exec(",
+        "subprocess",
+        "rm -rf"
+    ]
 
-    risky = ["os.system", "eval(", "exec(", "subprocess"]
-    for r in risky:
+    for r in risky_keywords:
         if r in code:
             score += 50
-            reasons.append(f"Danger: {r}")
+            reasons.append(r)
+
+    if "while True" in code:
+        score += 20
 
     if len(code.strip()) < 5:
-        score += 20
-        reasons.append("Too short")
+        score += 10
 
     level = "SAFE"
-    if score >= 50:
-        level = "RISKY"
+
     if score >= 80:
         level = "DANGEROUS"
+    elif score >= 50:
+        level = "RISKY"
 
     return {
         "score": score,

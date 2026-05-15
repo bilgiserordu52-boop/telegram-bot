@@ -1,12 +1,21 @@
-async def button_handler(update, context):
-    q = update.callback_query
-    await q.answer()
+async def handle_ui(update, context, text):
 
-    if q.data == "status":
-        await q.edit_message_text("Bot çalışıyor ✔")
+    user_id = update.effective_user.id
 
-    elif q.data == "ai":
-        await q.edit_message_text("AI sistemi aktif ✔")
+    if text == "👤 Profil":
+        await update.message.reply_text(
+            f"👤 Profil\nID: {user_id}\nSystem: V3 PRODUCT MODE"
+        )
+        return
 
-    elif q.data == "deploy":
-        await q.edit_message_text("Deploy tetiklendi ✔")
+    if text == "ℹ️ Yardım":
+        await update.message.reply_text(
+            "ℹ️ Komutlar:\n/start\n/deploy\nButonları kullan"
+        )
+        return
+
+    if text == "🔥 Durum":
+        await update.message.reply_text(
+            "🔥 Sistem: STABLE V3 ✔"
+        )
+        return
