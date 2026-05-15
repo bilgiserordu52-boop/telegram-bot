@@ -1,15 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-cd ~/telegram-bot
-
 echo "👀 Watcher başladı..."
 
-while inotifywait -e modify bot.py; do
-    echo "🛠 Değişiklik algılandı"
-
-    git add bot.py
-    git commit -m "auto deploy $(date)"
+while inotifywait -r -e modify .; do
+    git add .
+    git commit -m "auto update"
     git push
-
-    echo "🚀 GitHub'a gönderildi"
+    echo "🚀 Push atıldı"
 done
