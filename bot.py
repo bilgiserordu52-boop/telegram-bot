@@ -1,8 +1,7 @@
-from telegram.ext import ApplicationBuilder, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import ApplicationBuilder, MessageHandler, filters
 
 import config
 from deploy.engine import deploy_module
-from ui.admin_panel import button_handler
 
 
 async def handle(update, context):
@@ -15,22 +14,24 @@ async def handle(update, context):
             await deploy_module("ui", update.message)
         elif "full" in text:
             await deploy_module("full", update.message)
+        else:
+            await update.message.reply_text("Use: /deploy core|ui|full")
         return
 
     if text == "/start":
-        return await update.message.reply_text("Bot aktif")
+        await update.message.reply_text("Bot aktif 🚀")
+        return
 
-    return await update.message.reply_text("komut yok")
+    await update.message.reply_text("Komut yok")
 
 
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    # ⚠️ KRİTİK: COMMAND FILTER YOK
+    app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("BOT RUNNING CLEAN FIX")
-
+    print("BOT RUNNING CLEAN V6")
     app.run_polling()
 
 
