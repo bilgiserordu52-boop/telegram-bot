@@ -105,15 +105,24 @@ def headers():
 
 def get_file():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
-    return requests.get(url, headers=headers()).json()
+
+    r = requests.get(url, headers=headers())
+
+    return r.json()
 
 # ================= PUSH =================
 def push_to_staging(code: str, msg="deploy"):
+
     file = get_file()
+
+    if "sha" not in file:
+        return False, f"GITHUB ERROR:\n{file}"
 
     sha = file["sha"]
 
-    encoded = base64.b64encode(code.encode()).decode()
+    encoded = base64.b64encode(
+        code.encode()
+    ).decode()
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
 
@@ -134,6 +143,7 @@ def push_to_staging(code: str, msg="deploy"):
 
 # ================= SMART UPDATE =================
 def smart_update(code):
+
     review = ai_review(code)
 
     if review["level"] == "DANGEROUS":
@@ -149,13 +159,15 @@ def smart_update(code):
         f"AI:{review['level']} score:{review['score']}"
     )
 
-# ================= INFO =================
+# ================= VERSION =================
 def version():
     return CURRENT_VERSION
 
 # ================= UI =================
 def panel():
+
     return InlineKeyboardMarkup([
+
         [
             InlineKeyboardButton(
                 "🚀 Deploy",
@@ -201,13 +213,18 @@ def panel():
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
-        "🤖 PRO MAX v8 ACTIVE"
+        "🤖 PRO MAX v9 ACTIVE"
     )
 
 # ================= ADMIN PANEL =================
 async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     uid = update.effective_user.id
+
+    # deploy modunu sıfırla
+    deploy_pending.discard(uid)
 
     if not is_admin(uid):
         return await update.message.reply_text(
@@ -223,6 +240,7 @@ async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= CALLBACK =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     uid = q.from_user.id
 
@@ -239,6 +257,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ================= DEPLOY =================
     if data == "deploy":
+
         deploy_pending.add(uid)
 
         return await q.edit_message_text(
@@ -255,6 +274,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ================= BACK =================
     if data == "back":
+
         deploy_pending.discard(uid)
 
         return await q.edit_message_text(
@@ -264,8 +284,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ================= VERSION =================
     if data == "version":
+
         return await q.edit_message_text(
-            f"📦 VERSION:\n{version()}",
+            f"📦 VERSION:\n\n{version()}",
             reply_markup=panel()
         )
 
@@ -285,27 +306,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return await q.edit_message_text(
             msg,
-            reply_markup=panel()
-        )
-
-    # ================= STATUS =================
-    if data == "status":
-        return await q.edit_message_text(
-            f"""
-🟢 SYSTEM STATUS
-
-Uptime: {uptime()} sec
-Health: {"OK" if is_alive() else "DOWN"}
-
-Version:
-{CURRENT_VERSION}
-
-Safe Mode:
-{SAFE_MODE}
-
-Branch:
-{STAGING_BRANCH}
-            """,
             reply_markup=panel()
         )
 
@@ -336,8 +336,34 @@ Reasons:
             reply_markup=panel()
         )
 
+    # ================= STATUS =================
+    if data == "status":
+
+        return await q.edit_message_text(
+            f"""
+🟢 SYSTEM STATUS
+
+Uptime:
+{uptime()} sec
+
+Health:
+{"OK" if is_alive() else "DOWN"}
+
+Version:
+{CURRENT_VERSION}
+
+Safe Mode:
+{SAFE_MODE}
+
+Branch:
+{STAGING_BRANCH}
+            """,
+            reply_markup=panel()
+        )
+
     # ================= RELOAD =================
     if data == "reload":
+
         return await q.edit_message_text(
             f"""
 🔁 AUTO RELOAD
@@ -356,6 +382,7 @@ Version:
 
 # ================= MESSAGE =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     heartbeat()
 
     uid = update.effective_user.id
@@ -382,8 +409,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # ================= NORMAL =================
+    # ================= NORMAL CHAT =================
     if text.lower() == "selam":
+
         await update.message.reply_text(
             "Selam 👋"
         )
@@ -416,7 +444,7 @@ def main():
         )
     )
 
-    print("🚀 PRO MAX v8 RUNNING")
+    print("🚀 PRO MAX v9 RUNNING")
 
     app.run_polling()
 
