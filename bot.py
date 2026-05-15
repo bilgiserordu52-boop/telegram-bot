@@ -24,7 +24,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
 # ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
 
-# ================= ADMIN STORAGE =================
+# ================= ADMIN SYSTEM =================
 def load_admins():
     try:
         with open("admins.json", "r") as f:
@@ -39,7 +39,7 @@ def save_admins():
 admins = load_admins()
 deploy_mode = {}
 
-# ================= VERSION =================
+# ================= VERSION SYSTEM =================
 def get_version():
     return datetime.datetime.now().strftime("v%Y.%m.%d-%H%M")
 
@@ -85,7 +85,7 @@ def get_sha():
     except:
         return None
 
-# ================= DEPLOY =================
+# ================= DEPLOY COMMAND =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
@@ -104,13 +104,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ===== DEPLOY MODE =====
     if deploy_mode.get(uid):
 
-        deploy_mode[uid] = False
-
         if not GITHUB_TOKEN or not GITHUB_REPO:
+            deploy_mode[uid] = False
             await update.message.reply_text("❌ GitHub env eksik")
             return
 
         if len(text.strip()) < 20:
+            deploy_mode[uid] = False
             await update.message.reply_text("❌ Kod çok kısa")
             return
 
@@ -148,6 +148,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Exception: {str(e)}")
 
+        finally:
+            deploy_mode[uid] = False
+
         return
 
     # ===== NORMAL CHAT =====
@@ -172,6 +175,7 @@ def main():
         return
 
     print("BOT STARTING")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -183,6 +187,5 @@ def main():
     print("BOT RUNNING")
     app.run_polling()
 
-# ================= RUN =================
 if __name__ == "__main__":
     main()
