@@ -4,49 +4,43 @@ from deploy.engine import deploy_module
 
 
 async def handle(update, context):
-    text = update.message.text.lower().strip()
-
-    print("MSG:", text)
-
-    # -------------------------
-    # DEPLOY SYSTEM
-    # -------------------------
-    if text.startswith("/deploy"):
-        if "core" in text:
-            await deploy_module("core", update.message)
-            return
-
-        if "ui" in text:
-            await deploy_module("ui", update.message)
-            return
-
-        if "full" in text:
-            await deploy_module("full", update.message)
-            return
-
-        await update.message.reply_text("Kullanım: /deploy core|ui|full")
+    if not update.message or not update.message.text:
         return
 
-    # -------------------------
-    # START
-    # -------------------------
+    text = update.message.text.strip().lower()
+
+    print("INCOMING:", text)  # DEBUG
+
+    # ---------------- DEPLOY ----------------
+    if text.startswith("/deploy"):
+        parts = text.split()
+
+        module = "full"
+        if len(parts) > 1:
+            module = parts[1]
+
+        if module not in ["core", "ui", "full"]:
+            await update.message.reply_text("Usage: /deploy core|ui|full")
+            return
+
+        await deploy_module(module, update.message)
+        return
+
+    # ---------------- START ----------------
     if text == "/start":
         await update.message.reply_text("Bot aktif 🚀")
         return
 
-    # -------------------------
-    # DEFAULT
-    # -------------------------
-    await update.message.reply_text("Komut tanınmadı")
+    await update.message.reply_text("Komut yok")
 
 
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    # ⚠️ HER MESAJI AL
+    # ⚠️ TÜM MESAJLARI AL
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("BOT RUNNING FINAL CLEAN SYSTEM")
+    print("BOT RUNNING FIXED ROUTER V2")
 
     app.run_polling()
 
