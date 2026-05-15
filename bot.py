@@ -16,37 +16,30 @@ from telegram.ext import (
 TOKEN = os.getenv("TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
-
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
-
-# ================= DEBUG =================
-print("TOKEN:", TOKEN)
-print("BOT STARTING")
 
 # ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
 
-# ================= MEMORY =================
-users = set()
+# ================= STATE =================
 admins = set()
-deploy_mode = False
+deploy_mode = {}
 
-# ================= ADMIN =================
+# ================= ADMIN CHECK =================
 def is_admin(uid: int):
     return uid in admins or uid == ADMIN_ID
 
-# ================= COMMANDS =================
-
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot aktif\n/help")
 
+# ================= HELP =================
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "/start - Başlat\n"
-        "/help - Yardım\n"
-        "/login 1234 - Admin giriş\n"
-        "/deploy - Kod yükleme"
+        "/start\n"
+        "/login <password>\n"
+        "/deploy"
     )
 
 # ================= LOGIN =================
@@ -64,52 +57,67 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Hatalı şifre")
 
-# ================= DEPLOY MODE =================
-async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global deploy_mode
+# ================= GET SHA =================
+def get_sha():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    r = requests.get(url, headers=headers)
+    return r.json()["sha"]
 
+# ================= DEPLOY COMMAND =================
+async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
     if not is_admin(uid):
         await update.message.reply_text("❌ Yetki yok")
         return
 
-    deploy_mode = True
-    await update.message.reply_text("📦 Kod gönder (bot.py)")
+    deploy_mode[uid] = True
+    await update.message.reply_text("📦 Kod gönder (bot.py içeriği)")
 
 # ================= MESSAGE HANDLER =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global deploy_mode
-
     uid = update.effective_user.id
     text = update.message.text
 
     # ===== DEPLOY MODE =====
-    if deploy_mode and is_admin(uid):
+    if deploy_mode.get(uid):
 
         if not GITHUB_TOKEN or not GITHUB_REPO:
-            await update.message.reply_text("❌ GitHub ayarları eksik")
-            deploy_mode = False
+            await update.message.reply_text("❌ GitHub env eksik")
+            deploy_mode[uid] = False
             return
 
-        encoded = base64.b64encode(text.encode()).decode()
+        try:
+            encoded = base64.b64encode(text.encode()).decode()
+            sha = get_sha()
 
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
 
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        }
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json"
+            }
 
-        data = {
-            "message": "telegram bot update",
-            "content": encoded
-        }
+            data = {
+                "message": "telegram bot update",
+                "content": encoded,
+                "sha": sha
+            }
 
-        r = requests.put(url, json=data, headers=headers)
+            r = requests.put(url, json=data, headers=headers)
 
-        deploy_mode = False
-        await update.message.reply_text(f"🚀 Deploy sonucu: {r.status_code}")
+            deploy_mode[uid] = False
+
+            if r.status_code in [200, 201]:
+                await update.message.reply_text("🚀 Deploy başarılı")
+            else:
+                await update.message.reply_text(f"❌ Hata: {r.text}")
+
+        except Exception as e:
+            deploy_mode[uid] = False
+            await update.message.reply_text(f"❌ Exception: {str(e)}")
+
         return
 
     # ===== NORMAL CHAT =====
@@ -126,25 +134,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MAIN =================
 def main():
-    print("MAIN START")
+    if not TOKEN:
+        print("❌ TOKEN YOK")
+        return
+
+    print("BOT STARTING")
 
     app = ApplicationBuilder().token(TOKEN).build()
-
-    print("APP BUILT")
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("deploy", deploy))
 
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🚀 BOT RUNNING")
+    print("BOT RUNNING")
 
     app.run_polling()
 
-# ================= START =================
+# ================= RUN =================
 if __name__ == "__main__":
     main()
