@@ -17,32 +17,35 @@ from telegram.ext import (
 
 # ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
-GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_REPO = os.getenv("GITHUB_REPO")  # username/repo
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
+STAGING_BRANCH = os.getenv("STAGING_BRANCH", "staging")
 
 logging.basicConfig(level=logging.INFO)
 
-ADMINS = set([ADMIN_ID])
+ADMINS = {ADMIN_ID}
 
-# ================= STATE =================
 deploy_pending = set()
 code_history = []
 
 start_time = time.time()
 CURRENT_VERSION = str(uuid.uuid4())
 
-STAGING_BRANCH = "staging"
-
-# ================= SECURITY =================
+# ================= HELPERS =================
 def is_admin(uid):
     return uid in ADMINS
 
-# ================= SYSTEM =================
 def uptime():
     return round(time.time() - start_time, 2)
 
-# ================= AI REVIEW =================
+def headers():
+    return {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+
 def ai_review(code: str):
     score = 0
     reasons = []
@@ -70,12 +73,6 @@ def ai_review(code: str):
     return {"score": score, "level": level, "reasons": reasons}
 
 # ================= GITHUB =================
-def headers():
-    return {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
-    }
-
 def get_file():
     try:
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py?ref={STAGING_BRANCH}"
@@ -84,11 +81,9 @@ def get_file():
     except Exception as e:
         return {"error": str(e)}
 
-# ================= PUSH =================
-def push_to_staging(code: str, msg="deploy"):
+def push_to_staging(code, msg):
     file = get_file()
 
-    # 🔥 CRASH FIX
     if not isinstance(file, dict) or "sha" not in file:
         return False, f"GITHUB READ ERROR: {file}"
 
@@ -105,54 +100,43 @@ def push_to_staging(code: str, msg="deploy"):
         "branch": STAGING_BRANCH
     }
 
-    try:
-        r = requests.put(url, json=payload, headers=headers(), timeout=10)
+    r = requests.put(url, json=payload, headers=headers())
 
-        if r.status_code not in [200, 201]:
-            return False, r.text
+    if r.status_code not in [200, 201]:
+        return False, r.json()
 
-        return True, "OK"
-
-    except Exception as e:
-        return False, str(e)
+    return True, "OK"
 
 # ================= SMART UPDATE =================
 def smart_update(code):
-    review = ai_review(code)
-
-    if review["level"] == "DANGEROUS":
-        return False, f"BLOCKED:\n{review}"
-
     code_history.append(code)
 
     if len(code_history) > 10:
         code_history.pop(0)
 
-    return push_to_staging(
-        code,
-        f"AI:{review['level']} score:{review['score']}"
-    )
+    review = ai_review(code)
+
+    if review["level"] == "DANGEROUS":
+        return False, f"BLOCKED: {review}"
+
+    return push_to_staging(code, f"AI:{review['level']} score:{review['score']}")
 
 # ================= UI =================
 def panel():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
+        [InlineKeyboardButton("🧠 AI Review", callback_data="review")],
         [InlineKeyboardButton("📦 Version", callback_data="version")],
         [InlineKeyboardButton("📜 History", callback_data="history")],
-        [InlineKeyboardButton("🧠 AI Review", callback_data="review")],
         [InlineKeyboardButton("📊 Status", callback_data="status")]
     ])
 
-# ================= START =================
+# ================= COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 BOT ONLINE")
+    await update.message.reply_text("🤖 BOT ACTIVE")
 
-# ================= ADMIN =================
-async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    deploy_pending.discard(uid)
-
-    if not is_admin(uid):
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
         return await update.message.reply_text("❌ no access")
 
     await update.message.reply_text("🛠 PANEL", reply_markup=panel())
@@ -160,72 +144,71 @@ async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= CALLBACK =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    uid = q.from_user.id
     await q.answer()
 
-    if not is_admin(uid):
+    if not is_admin(q.from_user.id):
         return await q.edit_message_text("❌ no access")
 
     data = q.data
 
-    if data == "deploy":
-        deploy_pending.add(uid)
-        return await q.edit_message_text("📦 Kod gönder")
-
     if data == "version":
-        return await q.edit_message_text(f"📦 VERSION:\n{CURRENT_VERSION}", reply_markup=panel())
+        return await q.edit_message_text(f"VERSION:\n{CURRENT_VERSION}", reply_markup=panel())
 
     if data == "history":
-        msg = "\n".join(code_history[-5:]) if code_history else "No history"
+        msg = "\n".join(code_history[-5:]) or "empty"
         return await q.edit_message_text(msg, reply_markup=panel())
-
-    if data == "review":
-        if not code_history:
-            return await q.edit_message_text("No code")
-        r = ai_review(code_history[-1])
-        return await q.edit_message_text(str(r), reply_markup=panel())
 
     if data == "status":
         return await q.edit_message_text(
-            f"STATUS OK\nUptime: {uptime()}\nVersion: {CURRENT_VERSION}",
+            f"UPTIME: {uptime()}\nVERSION: {CURRENT_VERSION}",
+            reply_markup=panel()
+        )
+
+    if data == "review":
+        if not code_history:
+            return await q.edit_message_text("no code")
+
+        r = ai_review(code_history[-1])
+
+        return await q.edit_message_text(
+            f"""
+AI REVIEW
+Score: {r['score']}
+Level: {r['level']}
+Reasons: {', '.join(r['reasons']) or 'clean'}
+            """,
             reply_markup=panel()
         )
 
 # ================= MESSAGE =================
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
     text = update.message.text
+    uid = update.effective_user.id
 
     if not is_admin(uid):
         return
 
-    # deploy mode
-    if uid in deploy_pending:
-        deploy_pending.remove(uid)
+    if text.lower() == "selam":
+        return await update.message.reply_text("Selam 👋")
 
+    if "print(" in text or "def " in text:
         ok, res = smart_update(text)
 
         if ok:
             await update.message.reply_text("🚀 Deploy OK")
         else:
-            await update.message.reply_text(f"❌ {res}")
-
-        return
-
-    if text.lower() == "selam":
-        await update.message.reply_text("Selam 👋")
+            await update.message.reply_text(f"❌ ERROR:\n{res}")
 
 # ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", home))
+    app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("BOT RUNNING SAFE MODE")
-
+    print("BOT RUNNING...")
     app.run_polling()
 
 if __name__ == "__main__":
