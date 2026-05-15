@@ -3,6 +3,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from commands.start import start_cmd
 from commands.admin import admin_cmd, rollback_cmd
 from commands.message import handle_message
+from commands.deploy import deploy_cmd
+from telegram.ext import CommandHandler
 from ui.admin_panel import button_handler
 import config
 
@@ -11,6 +13,7 @@ def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("deploy", deploy_cmd))
     app.add_handler(CommandHandler("admin", admin_cmd))
     app.add_handler(CommandHandler("rollback", rollback_cmd))
 
