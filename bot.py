@@ -1,26 +1,25 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+rt config
 
-from commands.start import start_cmd
-from commands.admin import admin_cmd, rollback_cmd
-from commands.message import handle_message
-from commands.deploy import deploy_cmd
-from telegram.ext import CommandHandler
+from core.router import handle_command
 from ui.admin_panel import button_handler
-import config
 
 
+# =========================
+# BOT ENTRY POINT
+# =========================
 def main():
     app = ApplicationBuilder().token(config.TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("deploy", deploy_cmd))
-    app.add_handler(CommandHandler("admin", admin_cmd))
-    app.add_handler(CommandHandler("rollback", rollback_cmd))
+    # ALL TEXT TRAFFIC → ROUTER
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_command)
+    )
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # INLINE BUTTONS
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("BOT RUNNING (V2 CLEAN ARCHITECTURE)")
+    print("🤖 BOT RUNNING (V3 ORCHESTRATOR MODE)")
+
     app.run_polling()
 
 
