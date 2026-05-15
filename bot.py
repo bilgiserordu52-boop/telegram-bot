@@ -29,6 +29,10 @@ code_history = []
 start_time = time.time()
 last_ping = time.time()
 
+# ================= STAGING SYSTEM =================
+STAGING_BRANCH = "staging"
+MAIN_BRANCH = "main"
+
 # ================= SECURITY =================
 def is_admin(uid):
     return uid in ADMINS
@@ -61,7 +65,8 @@ def get_file():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
     return requests.get(url, headers=headers()).json()
 
-def push_code(code, msg="deploy"):
+# ================= STAGING PUSH =================
+def push_to_staging(code, msg="staging update"):
     file = get_file()
     sha = file["sha"]
 
@@ -72,20 +77,42 @@ def push_code(code, msg="deploy"):
     payload = {
         "message": msg,
         "content": encoded,
-        "sha": sha
+        "sha": sha,
+        "branch": STAGING_BRANCH
     }
 
     r = requests.put(url, json=payload, headers=headers())
     return r.status_code in [200, 201], r.text
 
+# ================= PROMOTE TO MAIN =================
+def promote_to_main(code):
+    file = get_file()
+    sha = file["sha"]
+
+    encoded = base64.b64encode(code.encode()).decode()
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
+
+    payload = {
+        "message": "promote to main",
+        "content": encoded,
+        "sha": sha,
+        "branch": MAIN_BRANCH
+    }
+
+    r = requests.put(url, json=payload, headers=headers())
+    return r.status_code in [200, 201], r.text
+
+# ================= SMART UPDATE ENGINE =================
 def smart_update(code):
     code_history.append(code)
 
     if len(code_history) > 10:
         code_history.pop(0)
 
-    return push_code(code, "smart update")
+    return push_to_staging(code, "smart staging update")
 
+# ================= INFO =================
 def last_commit():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/commits"
     r = requests.get(url, headers=headers()).json()
@@ -109,23 +136,24 @@ def panel():
         [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
         [InlineKeyboardButton("📦 Version", callback_data="version")],
         [InlineKeyboardButton("🧠 History", callback_data="history")],
-        [InlineKeyboardButton("🖥 Server", callback_data="server")],
-        [InlineKeyboardButton("📊 Status", callback_data="status")]
+        [InlineKeyboardButton("📊 Status", callback_data="status")],
+        [InlineKeyboardButton("🔄 Promote to Main", callback_data="promote")]
     ] + nav())
 
 # ================= CORE =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 PRO SELF UPDATE BOT ACTIVE")
+    await update.message.reply_text("🤖 STAGING SYSTEM ACTIVE")
 
 async def home(update, context):
     uid = update.effective_user.id
+
     if not is_admin(uid):
         return await update.message.reply_text("❌ Yetki yok")
 
     heartbeat()
 
     await update.message.reply_text(
-        "🛠 DEVOPS PANEL",
+        "🛠 STAGING PANEL",
         reply_markup=panel()
     )
 
@@ -133,6 +161,7 @@ async def home(update, context):
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
+
     await q.answer()
 
     if not is_admin(uid):
@@ -149,13 +178,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         deploy_pending.clear()
         return await q.edit_message_text("❌ Cancelled", reply_markup=panel())
 
-    # DEPLOY
+    # DEPLOY → STAGING
     if data == "deploy":
         deploy_pending.add(uid)
+
         return await q.edit_message_text(
-            "📦 Deploy Mode\nConfirm or Cancel",
+            "📦 STAGING MODE\nConfirm staging deploy?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚠️ CONFIRM", callback_data="deploy_confirm")],
+                [InlineKeyboardButton("⚠️ CONFIRM STAGING", callback_data="deploy_confirm")],
                 [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
                 [InlineKeyboardButton("🔙 Back", callback_data="back")]
             ])
@@ -167,10 +197,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         deploy_pending.remove(uid)
 
-        ok, res = push_code("manual deploy", "deploy")
+        ok, res = smart_update("staging deploy")
 
         return await q.edit_message_text(
-            "🚀 DEPLOY OK" if ok else f"❌ FAIL:\n{res}",
+            "🚀 SENT TO STAGING" if ok else f"❌ FAIL:\n{res}",
             reply_markup=panel()
         )
 
@@ -180,25 +210,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # HISTORY
     if data == "history":
-        msg = "🧠 LAST CODES:\n\n"
+        msg = "🧠 CODE HISTORY:\n\n"
+
         for i, c in enumerate(code_history[-5:]):
             msg += f"{i+1}. {c[:40]}\n"
 
         return await q.edit_message_text(msg, reply_markup=panel())
-
-    # SERVER
-    if data == "server":
-        status = "🟢 ONLINE" if is_alive() else "🔴 OFFLINE"
-
-        return await q.edit_message_text(
-            f"""
-🖥 SERVER
-
-Status: {status}
-Uptime: {uptime()} sec
-            """,
-            reply_markup=panel()
-        )
 
     # STATUS
     if data == "status":
@@ -206,10 +223,20 @@ Uptime: {uptime()} sec
             f"""
 🟢 SYSTEM
 
-Repo: {GITHUB_REPO}
-Admins: {len(ADMINS)}
 Uptime: {uptime()} sec
-            """,
+Repo: {GITHUB_REPO}
+Staging: ACTIVE
+Main: READY
+""",
+            reply_markup=panel()
+        )
+
+    # PROMOTE
+    if data == "promote":
+        ok, res = promote_to_main("promote from staging")
+
+        return await q.edit_message_text(
+            "🚀 PROMOTED TO MAIN" if ok else f"❌ FAIL:\n{res}",
             reply_markup=panel()
         )
 
@@ -225,12 +252,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     t = detect_type(text)
 
-    # 🧠 SELF UPDATE ENGINE
+    # 🧠 SELF UPDATE → STAGING
     if t == "code":
         ok, res = smart_update(text)
 
         if ok:
-            await update.message.reply_text("🧠 Smart Update OK (GitHub)")
+            await update.message.reply_text("🧠 Sent to STAGING")
         else:
             await update.message.reply_text(f"❌ FAIL:\n{res}")
 
@@ -249,7 +276,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("PRO SELF UPDATE RUNNING")
+    print("STAGING SYSTEM RUNNING")
     app.run_polling()
 
 if __name__ == "__main__":
