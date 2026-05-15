@@ -102,14 +102,16 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid in deploy_mode:
         deploy_mode.remove(uid)
 
-        history.append(text)
-        if len(history) > 3:
+        code = text # artık direkt gelen mesaj kod
+
+        history.append(code)
+        if len(history) > 5:
             history.pop(0)
 
-        ok, err = github_push(text, "telegram deploy")
+        ok, err = github_push(code, "deploy")
 
         if ok:
-            await update.message.reply_text("🚀 Deploy OK + GitHub push")
+            await update.message.reply_text("🚀 Deploy OK")
         else:
             await update.message.reply_text(f"❌ GitHub error: {err}")
 
