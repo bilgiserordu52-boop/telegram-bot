@@ -4,8 +4,21 @@ import requests
 import logging
 import time
 import uuid
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters
+)
 
 # ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
@@ -17,15 +30,16 @@ logging.basicConfig(level=logging.INFO)
 
 ADMINS = set([ADMIN_ID])
 
+# ================= STATES =================
 deploy_pending = set()
 code_history = []
 
-# ================= SYSTEM STATE =================
+# ================= SYSTEM =================
 start_time = time.time()
 last_ping = time.time()
 CURRENT_VERSION = str(uuid.uuid4())
 
-# ================= STAGING =================
+SAFE_MODE = True
 STAGING_BRANCH = "staging"
 
 # ================= SECURITY =================
@@ -43,12 +57,6 @@ def heartbeat():
 def is_alive():
     return (time.time() - last_ping) < 60
 
-# ================= DETECTOR =================
-def detect_type(text):
-    if "def " in text or "import " in text or "print(" in text:
-        return "code"
-    return "msg"
-
 # ================= AI REVIEW =================
 def ai_review(code: str):
     score = 0
@@ -58,7 +66,13 @@ def ai_review(code: str):
         score += 40
         reasons.append("Infinite loop risk")
 
-    bad = ["os.system", "exec(", "eval(", "subprocess"]
+    bad = [
+        "os.system",
+        "exec(",
+        "eval(",
+        "subprocess"
+    ]
+
     for b in bad:
         if b in code:
             score += 50
@@ -69,12 +83,18 @@ def ai_review(code: str):
         reasons.append("Too short")
 
     level = "SAFE"
+
     if score >= 50:
         level = "RISKY"
+
     if score >= 80:
         level = "DANGEROUS"
 
-    return {"score": score, "level": level, "reasons": reasons}
+    return {
+        "score": score,
+        "level": level,
+        "reasons": reasons
+    }
 
 # ================= GITHUB =================
 def headers():
@@ -87,9 +107,10 @@ def get_file():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
     return requests.get(url, headers=headers()).json()
 
-# ================= STAGING PUSH =================
-def push_to_staging(code, msg):
+# ================= PUSH =================
+def push_to_staging(code: str, msg="deploy"):
     file = get_file()
+
     sha = file["sha"]
 
     encoded = base64.b64encode(code.encode()).decode()
@@ -103,22 +124,30 @@ def push_to_staging(code, msg):
         "branch": STAGING_BRANCH
     }
 
-    r = requests.put(url, json=payload, headers=headers())
+    r = requests.put(
+        url,
+        json=payload,
+        headers=headers()
+    )
+
     return r.status_code in [200, 201], r.text
 
 # ================= SMART UPDATE =================
 def smart_update(code):
-    code_history.append(code)
-
-    if len(code_history) > 10:
-        code_history.pop(0)
-
     review = ai_review(code)
 
     if review["level"] == "DANGEROUS":
         return False, f"BLOCKED:\n{review}"
 
-    return push_to_staging(code, f"AI:{review['level']} score:{review['score']}")
+    code_history.append(code)
+
+    if len(code_history) > 10:
+        code_history.pop(0)
+
+    return push_to_staging(
+        code,
+        f"AI:{review['level']} score:{review['score']}"
+    )
 
 # ================= INFO =================
 def version():
@@ -127,63 +156,167 @@ def version():
 # ================= UI =================
 def panel():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Deploy", callback_data="deploy")],
-        [InlineKeyboardButton("🧠 AI Review", callback_data="review")],
-        [InlineKeyboardButton("📦 Version", callback_data="version")],
-        [InlineKeyboardButton("📜 History", callback_data="history")],
-        [InlineKeyboardButton("🔁 Reload Status", callback_data="reload")],
-        [InlineKeyboardButton("📊 Status", callback_data="status")]
+        [
+            InlineKeyboardButton(
+                "🚀 Deploy",
+                callback_data="deploy"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🧠 AI Review",
+                callback_data="review"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "📦 Version",
+                callback_data="version"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "📜 History",
+                callback_data="history"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🔁 Reload Status",
+                callback_data="reload"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "📊 Status",
+                callback_data="status"
+            )
+        ]
     ])
 
-# ================= CORE =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 PRO MAX v7 ACTIVE")
+    await update.message.reply_text(
+        "🤖 PRO MAX v8 ACTIVE"
+    )
 
-async def home(update, context):
+# ================= ADMIN PANEL =================
+async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+
     if not is_admin(uid):
-        return await update.message.reply_text("❌ no access")
+        return await update.message.reply_text(
+            "❌ no access"
+        )
 
     heartbeat()
 
-    await update.message.reply_text("🛠 DEVOPS PANEL", reply_markup=panel())
+    await update.message.reply_text(
+        "🛠 DEVOPS PANEL",
+        reply_markup=panel()
+    )
 
 # ================= CALLBACK =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
+
     await q.answer()
 
     if not is_admin(uid):
-        return await q.edit_message_text("❌ no access")
+        return await q.edit_message_text(
+            "❌ no access"
+        )
 
     heartbeat()
+
     data = q.data
 
-    if data == "version":
-        return await q.edit_message_text(f"📦 VERSION:\n{version()}", reply_markup=panel())
+    # ================= DEPLOY =================
+    if data == "deploy":
+        deploy_pending.add(uid)
 
+        return await q.edit_message_text(
+            "📦 Kod gönder",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "⬅️ Geri",
+                        callback_data="back"
+                    )
+                ]
+            ])
+        )
+
+    # ================= BACK =================
+    if data == "back":
+        deploy_pending.discard(uid)
+
+        return await q.edit_message_text(
+            "🛠 DEVOPS PANEL",
+            reply_markup=panel()
+        )
+
+    # ================= VERSION =================
+    if data == "version":
+        return await q.edit_message_text(
+            f"📦 VERSION:\n{version()}",
+            reply_markup=panel()
+        )
+
+    # ================= HISTORY =================
     if data == "history":
-        msg = "🧠 HISTORY:\n\n"
+
+        if not code_history:
+            return await q.edit_message_text(
+                "❌ No history",
+                reply_markup=panel()
+            )
+
+        msg = "📜 HISTORY\n\n"
+
         for i, c in enumerate(code_history[-5:]):
             msg += f"{i+1}. {c[:40]}\n"
-        return await q.edit_message_text(msg, reply_markup=panel())
 
+        return await q.edit_message_text(
+            msg,
+            reply_markup=panel()
+        )
+
+    # ================= STATUS =================
     if data == "status":
         return await q.edit_message_text(
             f"""
-🟢 SYSTEM
+🟢 SYSTEM STATUS
 
-Uptime: {uptime()}
+Uptime: {uptime()} sec
 Health: {"OK" if is_alive() else "DOWN"}
-Version: {CURRENT_VERSION}
+
+Version:
+{CURRENT_VERSION}
+
+Safe Mode:
+{SAFE_MODE}
+
+Branch:
+{STAGING_BRANCH}
             """,
             reply_markup=panel()
         )
 
+    # ================= REVIEW =================
     if data == "review":
+
         if not code_history:
-            return await q.edit_message_text("❌ no code")
+            return await q.edit_message_text(
+                "❌ no code history",
+                reply_markup=panel()
+            )
 
         r = ai_review(code_history[-1])
 
@@ -191,22 +324,32 @@ Version: {CURRENT_VERSION}
             f"""
 🧠 AI REVIEW
 
-Score: {r['score']}
-Level: {r['level']}
+Score:
+{r['score']}
 
+Level:
+{r['level']}
+
+Reasons:
 {chr(10).join(r['reasons']) if r['reasons'] else 'Clean'}
             """,
             reply_markup=panel()
         )
 
+    # ================= RELOAD =================
     if data == "reload":
         return await q.edit_message_text(
             f"""
-🔁 AUTO RELOAD SYSTEM
+🔁 AUTO RELOAD
 
-Version: {CURRENT_VERSION}
-Branch: staging
-Mode: CI/CD (GitHub → Railway)
+Mode:
+GitHub → Railway
+
+Branch:
+{STAGING_BRANCH}
+
+Version:
+{CURRENT_VERSION}
             """,
             reply_markup=panel()
         )
@@ -215,40 +358,69 @@ Mode: CI/CD (GitHub → Railway)
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     heartbeat()
 
-    text = update.message.text
     uid = update.effective_user.id
+    text = update.message.text
 
     if not is_admin(uid):
         return
 
-    t = detect_type(text)
+    # ================= DEPLOY MODE =================
+    if uid in deploy_pending:
 
-    if t == "code":
+        deploy_pending.remove(uid)
+
         ok, res = smart_update(text)
 
         if ok:
-            await update.message.reply_text("🧠 SENT TO STAGING (AI OK)")
+            await update.message.reply_text(
+                "🚀 Deploy OK"
+            )
         else:
-            await update.message.reply_text(f"❌ BLOCKED:\n{res}")
+            await update.message.reply_text(
+                f"❌ {res}"
+            )
 
         return
 
+    # ================= NORMAL =================
     if text.lower() == "selam":
-        await update.message.reply_text("Selam 👋")
+        await update.message.reply_text(
+            "Selam 👋"
+        )
 
 # ================= MAIN =================
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", home))
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .build()
+    )
 
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    app.add_handler(
+        CommandHandler("start", start)
+    )
 
-    print("PRO MAX v7 RUNNING")
+    app.add_handler(
+        CommandHandler("admin", home)
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(button)
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle
+        )
+    )
+
+    print("🚀 PRO MAX v8 RUNNING")
+
     app.run_polling()
 
+# ================= RUN =================
 if __name__ == "__main__":
     main()
 # test watcher
