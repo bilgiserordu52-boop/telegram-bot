@@ -16,8 +16,12 @@ from telegram.ext import (
 TOKEN = os.getenv("TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
+
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8607713044"))
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1234")
+
+# ================= VERSION =================
+VERSION = "v1.2"
 
 # ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
@@ -26,13 +30,15 @@ logging.basicConfig(level=logging.INFO)
 admins = set()
 deploy_mode = {}
 
-# ================= ADMIN CHECK =================
+# ================= ADMIN =================
 def is_admin(uid: int):
     return uid in admins or uid == ADMIN_ID
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Bot aktif\n/help")
+    await update.message.reply_text(
+        f"🤖 Bot aktif\n🚀 Versiyon: {VERSION}"
+    )
 
 # ================= HELP =================
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,14 +63,14 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Hatalı şifre")
 
-# ================= GET SHA =================
+# ================= SHA =================
 def get_sha():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/bot.py"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     r = requests.get(url, headers=headers)
     return r.json()["sha"]
 
-# ================= DEPLOY COMMAND =================
+# ================= DEPLOY =================
 async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
@@ -73,9 +79,9 @@ async def deploy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     deploy_mode[uid] = True
-    await update.message.reply_text("📦 Kod gönder (bot.py içeriği)")
+    await update.message.reply_text("📦 Kod gönder (bot.py)")
 
-# ================= MESSAGE HANDLER =================
+# ================= MESSAGE =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
@@ -84,7 +90,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if deploy_mode.get(uid):
 
         if not GITHUB_TOKEN or not GITHUB_REPO:
-            await update.message.reply_text("❌ GitHub env eksik")
+            await update.message.reply_text("❌ GitHub eksik")
             deploy_mode[uid] = False
             return
 
@@ -100,7 +106,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
 
             data = {
-                "message": "telegram bot update",
+                "message": f"telegram update {VERSION}",
                 "content": encoded,
                 "sha": sha
             }
@@ -112,12 +118,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if r.status_code in [200, 201]:
                 await update.message.reply_text("🚀 Deploy başarılı")
             else:
-                await update.message.reply_text(f"❌ Hata: {r.text}")
+                await update.message.reply_text(f"❌ Deploy hata: {r.text}")
 
         except Exception as e:
             deploy_mode[uid] = False
-            await update.message.reply_text(f"❌ Exception: {str(e)}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
 
+        return
+
+    # ===== TEST =====
+    if text.strip() == "1+1":
+        await update.message.reply_text("2")
         return
 
     # ===== NORMAL CHAT =====
@@ -132,9 +143,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif t in ["bot", "kimsin"]:
         await update.message.reply_text("Ben senin botunum 🤖")
 
-
-    if text.strip() == "1+1":
-        await update.message.reply_text("2")
+# ================= RESTART MSG (SYNC FIX) =================
+def notify_restart():
+    try:
+        if TOKEN and ADMIN_ID:
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            requests.post(url, data={
+                "chat_id": ADMIN_ID,
+                "text": f"🚀 Bot yeniden başladı!\n📦 Versiyon: {VERSION}"
+            })
+    except:
+        pass
 
 # ================= MAIN =================
 def main():
@@ -143,6 +162,8 @@ def main():
         return
 
     print("BOT STARTING")
+
+    notify_restart()
 
     app = ApplicationBuilder().token(TOKEN).build()
 
