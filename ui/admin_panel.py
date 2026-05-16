@@ -1,21 +1,67 @@
-async def handle_ui(update, context, text):
+# ui/admin_panel.py
 
-    user_id = update.effective_user.id
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from core.runtime import uptime
 
-    if text == "👤 Profil":
-        await update.message.reply_text(
-            f"👤 Profil\nID: {user_id}\nSystem: V3 PRODUCT MODE"
-        )
-        return
 
-    if text == "ℹ️ Yardım":
-        await update.message.reply_text(
-            "ℹ️ Komutlar:\n/start\n/deploy\nButonları kullan"
-        )
-        return
+# =========================
+# ADMIN MAIN PANEL
+# =========================
+def admin_main():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Status", callback_data="admin_status"),
+            InlineKeyboardButton("🚀 Deploy", callback_data="admin_deploy")
+        ],
+        [
+            InlineKeyboardButton("🤖 AI Review", callback_data="admin_ai"),
+            InlineKeyboardButton("📜 Logs", callback_data="admin_logs")
+        ],
+        [
+            InlineKeyboardButton("👥 Users", callback_data="admin_users"),
+            InlineKeyboardButton("⚙️ System", callback_data="admin_system")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="back_home")
+        ]
+    ])
 
-    if text == "🔥 Durum":
-        await update.message.reply_text(
-            "🔥 Sistem: STABLE V3 ✔"
-        )
-        return
+
+# =========================
+# ADMIN DATA BUILDERS
+# =========================
+def admin_status_text():
+    return f"""
+📊 SYSTEM STATUS
+
+⏱ Uptime: {uptime()}
+🔥 Bot: ACTIVE
+⚡ Mode: CLEAN ARCH
+"""
+
+
+def admin_deploy_text(result=""):
+    return f"""
+🚀 DEPLOY PANEL
+
+Last result:
+{result}
+"""
+
+
+def admin_logs_text():
+    return "📜 LOG SYSTEM READY"
+
+
+def admin_users_text():
+    return "👥 USER SYSTEM READY"
+
+
+def admin_system_text():
+    return """
+⚙️ SYSTEM INFO
+
+✔ Router: ACTIVE
+✔ UI: CLEAN
+✔ Deploy: SEPARATED
+"""

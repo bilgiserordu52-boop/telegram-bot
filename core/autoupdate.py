@@ -1,12 +1,6 @@
 import subprocess
-import os
-import sys
-import time
 
-
-def update_and_restart():
-
-    print("CHECKING UPDATES...")
+def run_update():
 
     result = subprocess.run(
         ["git", "pull"],
@@ -16,11 +10,4 @@ def update_and_restart():
 
     print(result.stdout)
 
-    print("RESTARTING BOT...")
-
-    time.sleep(1)
-
-    os.execv(
-        sys.executable,
-        [sys.executable, "bot.py"]
-    )
+    return result.stdout

@@ -1,103 +1,66 @@
-from core.system import restart_bot
-from core.autoupdate import update_and_restart
-from deploy.engine import deploy_module
+from core.screen import SCREENS
+from core.state import set_state, push_stack, pop_stack
 
 
+# =========================
+# SPA RENDER ENGINE
+# =========================
+async def render(update, text, keyboard):
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=keyboard
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=keyboard
+        )
+
+
+# =========================
+# ROUTER
+# =========================
 async def route(update, context):
 
-    text = update.message.text
+    user_id = update.effective_user.id
 
-    print("RAW:", repr(text))
+    # =========================
+    # CALLBACK UI (SPA CORE)
+    # =========================
+    if update.callback_query:
 
-    # TEXT TEMİZLE
-    clean = (
-        text.replace("👤", "")
-        .replace("🔥", "")
-        .replace("ℹ️", "")
-        .strip()
-    )
+        data = update.callback_query.data
 
-    print("CLEAN:", clean)
+        if data == "back":
+            state = pop_stack(user_id)
+            set_state(user_id, state)
+            handler = SCREENS.get(state)
+            if handler:
+                await handler(update, render)
+            return
 
-    # START
+        if data in SCREENS:
+            set_state(user_id, data)
+            push_stack(user_id, data)
+
+            handler = SCREENS[data]
+            await handler(update, render)
+            return
+
+        return
+
+    # =========================
+    # TEXT INPUT
+    # =========================
+    text = update.message.text.strip().lower()
+
     if text == "/start":
-        await update.message.reply_text(
-            "🤖 Autonomous Bot Active"
-        )
+        set_state(user_id, "home")
+        push_stack(user_id, "home")
+        await SCREENS["home"](update, render)
         return
 
-    # SELAM
-    if text.lower() == "selam":
-        await update.message.reply_text(
-            "selam 😄"
-        )
-        return
-
-    # STATUS
-    if text == "/status":
-
-        await update.message.reply_text(
-            "🟢 SYSTEM ONLINE\nSelf-Healing: OFF"
-        )
-        return
-
-    # RESTART
-    if text == "/restart":
-
-        await update.message.reply_text(
-            "♻️ Restarting bot..."
-        )
-
-        restart_bot()
-        return
-
-    # UPDATE
-    if text == "/update":
-
-        await update.message.reply_text(
-            "🔄 Updating system..."
-        )
-
-        update_and_restart()
-        return
-
-    # DEPLOY
-    if text.startswith("/deploy"):
-
-        name = (
-            text.split()[1]
-            if len(text.split()) > 1
-            else "full"
-        )
-
-        await deploy_module(name, update.message)
-        return
-
-    # PROFIL
-    if "Profil" in clean:
-
-        await update.message.reply_text(
-            "👤 Profil çalıştı"
-        )
-        return
-
-    # DURUM
-    if "Durum" in clean:
-
-        await update.message.reply_text(
-            "🔥 Sistem aktif"
-        )
-        return
-
-    # YARDIM
-    if "Yardım" in clean:
-
-        await update.message.reply_text(
-            "ℹ️ Yardım menüsü"
-        )
-        return
-
-    # UNKNOWN
-    await update.message.reply_text(
-        "❗ Anlaşılmadı"
-    )
+    await update.message.reply_text("❗ Anlaşılmadı")

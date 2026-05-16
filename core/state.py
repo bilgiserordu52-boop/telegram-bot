@@ -3,29 +3,30 @@ import os
 
 USERS_FILE = "users.json"
 
-
-def load_users():
-
-    if not os.path.exists(USERS_FILE):
-        return {}
-
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
+USER_STATE = {}
+USER_STACK = {}
 
 
-def save_users(data):
-
-    with open(USERS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def set_state(user_id, state):
+    USER_STATE[str(user_id)] = state
 
 
-def add_user(user_id):
+def get_state(user_id):
+    return USER_STATE.get(str(user_id), "home")
 
-    users = load_users()
 
-    if str(user_id) not in users:
-        users[str(user_id)] = {
-            "messages": 0
-        }
+def push_stack(user_id, state):
+    uid = str(user_id)
+    USER_STACK.setdefault(uid, [])
+    USER_STACK[uid].append(state)
 
-    save_users(users)
+
+def pop_stack(user_id):
+    uid = str(user_id)
+    stack = USER_STACK.get(uid, [])
+
+    if len(stack) > 1:
+        stack.pop()
+        return stack[-1]
+
+    return "home"

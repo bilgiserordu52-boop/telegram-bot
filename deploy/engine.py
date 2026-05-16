@@ -1,36 +1,57 @@
-import asyncio
+# deploy/engine.py
+
+import subprocess
+import json
+from datetime import datetime
+
+DEPLOY_LOG = "storage/deploy_history.json"
 
 
-async def deploy_module(name, message):
+def _load_log():
+    try:
+        with open(DEPLOY_LOG, "r") as f:
+            return json.load(f)
+    except:
+        return []
 
-    print("DEPLOY:", name)
+
+def _save_log(data):
+    with open(DEPLOY_LOG, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def log_deploy(name, result):
+    data = _load_log()
+
+    data.append({
+        "name": name,
+        "result": str(result),
+        "time": str(datetime.now())
+    })
+
+    _save_log(data)
+
+
+async def deploy_module(name="full", message=None):
+    """
+    SADECE GİT PULL YAPAR
+    ASLA BOT MESSAGE BASMAZ
+    """
 
     try:
-        sent = await message.reply_text(f"🚀 DEPLOY START: {name}")
+        result = subprocess.check_output(
+            ["git", "pull"],
+            stderr=subprocess.STDOUT
+        ).decode()
+
+        log_deploy(name, result)
+
+        # SADECE RETURN
+        return result
+
     except Exception as e:
-        print("REPLY ERROR:", e)
-        return
+        error = str(e)
 
-    files = [
-        "bot.py",
-        "config.py",
-        "ui/admin_panel.py",
-        "deploy/engine.py",
-        "core/router.py"
-    ]
+        log_deploy(name, error)
 
-    total = len(files)
-
-    for i, f in enumerate(files, start=1):
-
-        await asyncio.sleep(0.5)
-
-        try:
-            await sent.edit_text(f"🚀 {name} {i}/{total}\n📦 {f}")
-        except Exception as e:
-            print("EDIT ERROR:", e)
-
-    try:
-        await sent.edit_text(f"✅ DEPLOY DONE: {name}")
-    except Exception as e:
-        print("FINAL ERROR:", e)
+        return error

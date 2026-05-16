@@ -1,0 +1,23 @@
+# =========================
+# GLOBAL FEATURE REGISTRY (SINGLE SOURCE OF TRUTH)
+# =========================
+
+FEATURES = {}
+
+
+def register_feature(name, func):
+    global FEATURES
+    FEATURES[name] = func
+
+
+def get_feature(name):
+    return FEATURES.get(name)
+
+
+def list_features():
+    return FEATURES
+
+
+def clear_features():
+    global FEATURES
+    FEATURES = {}

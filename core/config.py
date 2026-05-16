@@ -1,0 +1,2 @@
+# BOT TOKEN (şimdilik sabit)
+TOKEN = "8945412773:AAFRsFVmYqqcgzSwidMVo-VN3uK59ELEiEE"
